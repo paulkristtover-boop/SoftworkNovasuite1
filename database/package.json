@@ -1,0 +1,13 @@
+{
+  "name": "novasuite-database",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "migrate": "node migrate.js",
+    "seed": "node seed.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "pg": "^8.13.1"
+  }
+}
