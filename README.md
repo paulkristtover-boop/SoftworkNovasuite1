@@ -152,10 +152,25 @@ DATABASE_URL=postgresql://... npm run db:migrate
 4. Optional: enable webhook (`USE_WEBHOOK=true` + `WEBHOOK_URL`).
 
 ### 3. Vercel – CMS
-1. Import repo → **Root Directory: `cms`**.  
-2. Framework: Next.js.  
-3. Set all **Vercel** env vars (same `DATABASE_URL`).  
-4. Deploy → open `https://YOUR.vercel.app` → sign in with `ADMIN_CMS_PASSWORD`.
+
+**Important:** If you see *“No Next.js version detected”*, the Root Directory is wrong.
+
+1. Import the repo in Vercel.  
+2. **Settings → General → Root Directory** → set to **`cms`**  
+   (or `NovaSuite/cms` if `NovaSuite` is not the Git root).  
+   This folder contains `package.json` with `"next"`.  
+3. Framework preset: **Next.js** (auto-detected once Root Directory is `cms`).  
+4. Environment variables (Production):
+   ```
+   DATABASE_URL=
+   ADMIN_CMS_PASSWORD=
+   ADMIN_CMS_SECRET=
+   BOT_TOKEN=
+   NODE_ENV=production
+   ```
+5. Deploy → open `https://YOUR.vercel.app` → sign in with `ADMIN_CMS_PASSWORD`.
+
+See also `cms/DEPLOY.md`.
 
 ---
 

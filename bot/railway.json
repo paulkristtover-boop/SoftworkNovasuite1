@@ -2,10 +2,10 @@
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "npm install --prefix bot --omit=dev && npm install --prefix database --omit=dev"
+    "buildCommand": "npm install --omit=dev && cd ../database && npm install --omit=dev"
   },
   "deploy": {
-    "startCommand": "node database/migrate.js && node bot/bot.js",
+    "startCommand": "cd ../database && node migrate.js && cd ../bot && node bot.js",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }
