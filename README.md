@@ -1,88 +1,53 @@
-# NovaSuite
+# NovaSuite v2
 
-Paid-To-Click (PTC) platform: **Telegram bot** + **Admin CMS** + **one PostgreSQL**.
+PTC platform — **flat structure**, all **JavaScript**.
 
-| App | Stack | Deploy |
-|-----|--------|--------|
-| `bot/` | Telegraf (users + admin notifications) | **Railway** |
-| `cms/` | Next.js (professional admin dashboard) | **Vercel** |
-| `database/` | Shared schema | Same Postgres |
-
-Currency: **USDT only**. Admin pays withdrawals manually from a Trust wallet. Payment addresses are edited in the CMS (no payment API).
-
----
+| Component | Path | Deploy |
+|-----------|------|--------|
+| Telegram bot | `bot.js` + handlers/… | **Railway** |
+| Admin CMS | `admin-cms/` | **Vercel** (Root Directory = `admin-cms`) |
+| Schema | `postgres/schema.sql` | Shared PostgreSQL |
 
 ## Structure
 
 ```
 NovaSuite/
-├── bot/                     # Telegram bot (Railway)
-│   ├── bot.js               # Entry
-│   ├── package.json
-│   ├── .env.example
-│   └── src/
-│       ├── config/
-│       ├── database/
-│       ├── handlers/        # user/ + admin/
-│       ├── keyboards/       # user UI ≠ admin UI
-│       ├── middleware/
-│       ├── services/
-│       ├── jobs/
-│       ├── inline/
-│       ├── webhooks/
-│       ├── utils/
-│       └── receipts/
-├── cms/                     # Admin CMS (Vercel)
-│   ├── app/                 # Pages + auth API
-│   ├── components/
-│   ├── lib/                 # db, auth
-│   ├── package.json
-│   ├── vercel.json
-│   └── .env.example
-├── database/                # Shared Postgres
-│   ├── migrate.js
-│   ├── seed.js
-│   └── package.json
-├── docs/
-│   ├── DEPLOY_RAILWAY.md
-│   └── DEPLOY_VERCEL.md
-├── package.json             # Monorepo scripts
+├── bot.js
+├── package.json
 ├── railway.json
-├── nixpacks.toml
-├── Procfile
 ├── .env.example
+├── config/
+├── database/
+├── handlers/          # user/ + admin/
+├── keyboards/
+├── middleware/
+├── services/
+├── jobs/
+├── utils/
+├── webhooks/
+├── receipts/
+├── scripts/           # migrate.js, backup.js
+├── admin-cms/         # Next.js (JS)
+├── postgres/
+│   └── schema.sql
+├── docs/
 └── README.md
 ```
 
----
+## Hardening (v2)
 
-## Features
+- **Session security (CMS):** JWT + server-side `cms_sessions` table, `sameSite=strict`, TTL, revoke on logout, timing-safe password compare  
+- **Deposit review UI:** checklist (amount, explorer, address, no duplicate) required before credit  
+- **Campaign verification:** start view → token → minimum duration → complete (anti-instant-claim)  
+- **Anti-fraud:** daily view/earn limits, cooldown, fraud_score, fraud_events  
+- **Idempotency:** unique keys on deposits/withdrawals/transactions/treasury  
+- **Backups:** `npm run backup` (JSON snapshot; use `pg_dump` in production)  
+- **Monitoring:** health checks table + cron heartbeats; `/health` on webhook mode  
+- **Legal:** Terms & Privacy in bot + CMS settings URLs  
 
-**User bot:** `/start`, balance, earn (view ads), advertise, referrals, deposit / withdraw (USDT), submit idea, support, terms, privacy.
+## Env
 
-**Admin bot:** notifications only — approve/reject deposits & withdrawals, mark paid, moderate ads, stats (different keyboard from users).
-
-**CMS:** dashboard, users (ban), deposits, withdrawals, ads, payment addresses, treasury + balancing txs, ledger, ideas, support, audit, settings.
-
----
-
-## Quick start (local)
-
-```bash
-cp .env.example .env
-# Set BOT_TOKEN, ADMIN_IDS, DATABASE_URL, ADMIN_CMS_PASSWORD, ADMIN_CMS_SECRET
-
-npm run db:migrate
-npm run bot:dev      # bot
-npm run cms:dev      # http://localhost:3000
-```
-
----
-
-## Environment
-
-### Railway (bot)
-
+**Railway**
 ```
 BOT_TOKEN=
 ADMIN_IDS=
@@ -91,44 +56,26 @@ ADMIN_CMS_URL=https://YOUR.vercel.app
 NODE_ENV=production
 ```
 
-Optional: `USE_WEBHOOK`, `WEBHOOK_URL`, `MIN_WITHDRAW`, `MIN_DEPOSIT`, `REFERRAL_BONUS_PERCENT`, `SUPPORT_USERNAME`, `TRUST_WALLET_ADDRESS`, …  
-Full list: `.env.example` and `bot/.env.example`.
-
-### Vercel (CMS) — **Root Directory = `cms`**
-
+**Vercel** (`admin-cms`)
 ```
 DATABASE_URL=
 ADMIN_CMS_PASSWORD=
 ADMIN_CMS_SECRET=
 BOT_TOKEN=
+SESSION_MAX_AGE_HOURS=8
 NODE_ENV=production
 ```
 
-Use the **same** `DATABASE_URL` on both platforms.
+## Local
 
----
+```bash
+cp .env.example .env
+npm install
+npm run migrate
+npm run bot:dev
+cd admin-cms && npm install && npm run dev
+```
 
-## Deploy
+## Currency
 
-### Railway — bot
-
-- Root Directory: **empty** (this folder)
-- Start: `node database/migrate.js && node bot/bot.js`
-- Details: [docs/DEPLOY_RAILWAY.md](docs/DEPLOY_RAILWAY.md)
-
-### Vercel — CMS
-
-- Root Directory: **`cms`** (required — avoids “No Next.js version detected”)
-- Details: [docs/DEPLOY_VERCEL.md](docs/DEPLOY_VERCEL.md)
-
----
-
-## Scripts
-
-| Command | Description |
-|---------|-------------|
-| `npm run db:migrate` | Create tables |
-| `npm run db:seed` | Sample payment address |
-| `npm run bot` / `bot:dev` | Run Telegram bot |
-| `npm run cms:dev` | Run Admin CMS |
-| `npm start` | Migrate + start bot (production) |
+**USDT only.** Admin pays withdrawals from Trust wallet. Payment addresses managed in CMS (no payment API).

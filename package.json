@@ -1,17 +1,29 @@
 {
   "name": "novasuite",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "NovaSuite PTC \u2013 Telegraf bot (Railway) + Next.js CMS (Vercel) + PostgreSQL",
-  "main": "bot/bot.js",
+  "description": "NovaSuite PTC – Telegraf bot + Next.js Admin CMS + PostgreSQL",
+  "main": "bot.js",
   "scripts": {
-    "start": "node database/migrate.js && node bot/bot.js",
-    "bot": "node bot/bot.js",
-    "bot:dev": "npm install --prefix bot && npx --prefix bot nodemon bot/bot.js",
-    "db:migrate": "npm install --prefix database && node database/migrate.js",
-    "db:seed": "node database/seed.js",
-    "cms:dev": "npm install --prefix cms && npm run dev --prefix cms",
-    "cms:build": "npm install --prefix cms && npm run build --prefix cms"
+    "start": "node scripts/migrate.js && node bot.js",
+    "bot": "node bot.js",
+    "bot:dev": "nodemon bot.js",
+    "migrate": "node scripts/migrate.js",
+    "backup": "node scripts/backup.js",
+    "cms:dev": "npm --prefix admin-cms run dev",
+    "cms:build": "npm --prefix admin-cms run build",
+    "cms:start": "npm --prefix admin-cms run start"
+  },
+  "dependencies": {
+    "dotenv": "16.4.5",
+    "express": "4.21.1",
+    "node-cron": "3.0.3",
+    "pg": "8.13.1",
+    "telegraf": "4.16.3",
+    "uuid": "10.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "3.1.7"
   },
   "engines": {
     "node": "20.x"

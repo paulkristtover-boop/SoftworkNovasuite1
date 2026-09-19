@@ -1,1 +1,1 @@
-web: node database/migrate.js && node bot/bot.js
+web: node scripts/migrate.js && node bot.js
