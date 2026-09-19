@@ -2,6 +2,7 @@ import { AdminShell } from '@/components/AdminShell';
 import { query } from '@/lib/db';
 import { formatUsd, formatDate } from '@/lib/format';
 import { revalidatePath } from 'next/cache';
+import { notifyUser } from '@/lib/telegram';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,6 +31,16 @@ async function setAdStatus(formData) {
        VALUES ('admin','activate_ad','ad',$1,$2)`,
       [String(id), JSON.stringify(checklist)]
     );
+    {
+      const row = await query('SELECT owner_id, title FROM ads WHERE id=$1', [id]);
+      const r = row.rows[0];
+      if (r) {
+        await notifyUser(
+          r.owner_id,
+          `✅ *Campaign activated*\n\n#${id} · ${r.title}\n\nYour ad is now live for users to view.`
+        );
+      }
+    }
   } else if (status === 'rejected') {
     await query(
       `UPDATE ads SET status='rejected', admin_note=$1, updated_at=NOW() WHERE id=$2`,
@@ -40,6 +51,16 @@ async function setAdStatus(formData) {
        VALUES ('admin','reject_ad','ad',$1,$2)`,
       [String(id), JSON.stringify({ note })]
     );
+    {
+      const row = await query('SELECT owner_id, title FROM ads WHERE id=$1', [id]);
+      const r = row.rows[0];
+      if (r) {
+        await notifyUser(
+          r.owner_id,
+          `❌ *Campaign rejected*\n\n#${id} · ${r.title}\n\nContact support if you need details.`
+        );
+      }
+    }
   } else {
     await query(`UPDATE ads SET status=$1, updated_at=NOW() WHERE id=$2`, [status, id]);
     await query(

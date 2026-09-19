@@ -2,6 +2,7 @@ import { AdminShell } from '@/components/AdminShell';
 import { query, pool } from '@/lib/db';
 import { formatUsd, formatDate } from '@/lib/format';
 import { revalidatePath } from 'next/cache';
+import { notifyUser } from '@/lib/telegram';
 export const dynamic = 'force-dynamic';
 
 async function markPaid(formData) {
@@ -40,6 +41,17 @@ async function markPaid(formData) {
   } finally {
     client.release();
   }
+  {
+    const row = await query('SELECT user_id, amount, tx_hash FROM withdrawals WHERE id=$1', [id]);
+    const r = row.rows[0];
+    if (r) {
+      const txLine = r.tx_hash ? `\nTx: \`${r.tx_hash}\`` : '';
+      await notifyUser(
+        r.user_id,
+        `✅ *Withdrawal paid*\n\nRequest #${id}\nAmount: *$${parseFloat(r.amount).toFixed(4)} USDT*${txLine}\n\nFunds sent to your wallet.`
+      );
+    }
+  }
   revalidatePath('/withdrawals');
 }
 
@@ -70,6 +82,16 @@ async function rejectWd(formData) {
     throw e;
   } finally {
     client.release();
+  }
+  {
+    const row = await query('SELECT user_id, amount FROM withdrawals WHERE id=$1', [id]);
+    const r = row.rows[0];
+    if (r) {
+      await notifyUser(
+        r.user_id,
+        `❌ *Withdrawal rejected*\n\nRequest #${id}\nAmount: $${parseFloat(r.amount).toFixed(4)} USDT\n\nFunds returned to your balance.`
+      );
+    }
   }
   revalidatePath('/withdrawals');
 }

@@ -44,15 +44,32 @@ function registerAdminHandlers(bot) {
   });
 
   bot.hears('📊 Stats', adminOnly, async (ctx) => {
-    const [users, bal, pd, pw, tb] = await Promise.all([
+    const [users, bal, pd, pw, pa, tb] = await Promise.all([
       pool.query('SELECT COUNT(*) FROM users'),
       pool.query('SELECT COALESCE(SUM(balance),0) AS s FROM users'),
       pool.query(`SELECT COUNT(*) FROM deposits WHERE status='pending'`),
       pool.query(`SELECT COUNT(*) FROM withdrawals WHERE status='pending'`),
+      pool.query(`SELECT COUNT(*) FROM ads WHERE status='pending'`),
       getSetting('treasury_balance', '0'),
     ]);
+    const action = parseInt(pd.rows[0].count, 10) + parseInt(pw.rows[0].count, 10) + parseInt(pa.rows[0].count, 10);
     await ctx.replyWithMarkdown(
-      `📊 *Stats*\nUsers: ${users.rows[0].count}\nBalances: ${formatUsd(bal.rows[0].s)}\nPending dep: ${pd.rows[0].count}\nPending wd: ${pw.rows[0].count}\nTreasury: ${formatUsd(tb)}`,
+      [
+        '📊 *Operations snapshot*',
+        '',
+        `Users: *${users.rows[0].count}*`,
+        `Balances: *${formatUsd(bal.rows[0].s)}*`,
+        `Treasury: *${formatUsd(tb)}*`,
+        '',
+        '*Queue*',
+        `• Deposits pending: *${pd.rows[0].count}*`,
+        `• Withdrawals pending: *${pw.rows[0].count}*`,
+        `• Campaigns pending: *${pa.rows[0].count}*`,
+        '',
+        action > 0
+          ? `_⚠️ ${action} item(s) need attention — CMS or buttons below_`
+          : '_✓ Queues clear_',
+      ].join('\n'),
       adminMenu()
     );
   });

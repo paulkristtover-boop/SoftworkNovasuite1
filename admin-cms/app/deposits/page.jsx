@@ -2,6 +2,7 @@ import { AdminShell } from '@/components/AdminShell';
 import { query, pool } from '@/lib/db';
 import { formatUsd, formatDate } from '@/lib/format';
 import { revalidatePath } from 'next/cache';
+import { notifyUser } from '@/lib/telegram';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,6 +69,17 @@ async function approveDeposit(formData) {
   } finally {
     client.release();
   }
+  // reload for notify
+  {
+    const row = await query('SELECT user_id, amount FROM deposits WHERE id=$1', [id]);
+    const r = row.rows[0];
+    if (r) {
+      await notifyUser(
+        r.user_id,
+        `✅ *Deposit approved*\n\nRequest #${id}\nAmount: *$${parseFloat(r.amount).toFixed(4)} USDT*\n\nCredited to your wallet.`
+      );
+    }
+  }
   revalidatePath('/deposits');
 }
 
@@ -84,6 +96,16 @@ async function rejectDeposit(formData) {
      VALUES ('admin','reject_deposit','deposit',$1)`,
     [String(id)]
   );
+  {
+    const row = await query('SELECT user_id, amount FROM deposits WHERE id=$1', [id]);
+    const r = row.rows[0];
+    if (r) {
+      await notifyUser(
+        r.user_id,
+        `❌ *Deposit rejected*\n\nRequest #${id}\nAmount: $${parseFloat(r.amount).toFixed(4)} USDT\n\nContact support if you need help.`
+      );
+    }
+  }
   revalidatePath('/deposits');
 }
 

@@ -2,6 +2,7 @@ import { AdminShell } from '@/components/AdminShell';
 import { query } from '@/lib/db';
 import { formatUsd, formatDate } from '@/lib/format';
 import { revalidatePath } from 'next/cache';
+import { notifyUser } from '@/lib/telegram';
 export const dynamic = 'force-dynamic';
 
 async function banUser(formData) {
@@ -10,6 +11,7 @@ async function banUser(formData) {
   const reason = formData.get('reason') || 'Banned by admin';
   await query('UPDATE users SET is_banned=TRUE, ban_reason=$1, updated_at=NOW() WHERE telegram_id=$2', [reason, id]);
   await query("INSERT INTO audit_logs (actor_type,action,target_type,target_id,details) VALUES ('admin','ban_user','user',$1,$2)", [String(id), JSON.stringify({ reason })]);
+  await notifyUser(id, `🚫 *Account restricted*\n\nReason: ${reason}\n\nContact support if this is a mistake.`);
   revalidatePath('/users');
 }
 async function unbanUser(formData) {
@@ -17,6 +19,7 @@ async function unbanUser(formData) {
   const id = formData.get('id');
   await query('UPDATE users SET is_banned=FALSE, ban_reason=NULL, updated_at=NOW() WHERE telegram_id=$1', [id]);
   await query("INSERT INTO audit_logs (actor_type,action,target_type,target_id) VALUES ('admin','unban_user','user',$1)", [String(id)]);
+  await notifyUser(id, `✅ *Account restored*\n\nYou can use NovaSuite again.`);
   revalidatePath('/users');
 }
 

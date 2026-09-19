@@ -135,8 +135,7 @@ async function handleConversation(ctx, next) {
               `*Owner:* ${ctx.from.id} (@${ctx.from.username || 'n/a'})`,
               ``,
               `_Open the URL, then Activate or Reject_`,
-            ].join('
-'),
+            ].join('\n'),
             {
               parse_mode: 'Markdown',
               ...require('../../keyboards/admin').adModeration(ad.id),
