@@ -2,42 +2,14 @@ const { getUser } = require('../../services/userService');
 const { getSetting } = require('../../services/settingsService');
 const { mainMenu, cancelInline } = require('../../keyboards/user');
 const { formatUsd } = require('../../utils/helpers');
-const { block, SEP, stepProgress, tip, errorMsg } = require('../../utils/ui');
 const config = require('../../config');
-
 module.exports = function withdrawHandler(bot) {
-  bot.hears('➖ Withdraw', async (ctx) => {
+  bot.hears('📤 Withdraw', async (ctx) => {
     const user = await getUser(ctx.from.id);
-    if (!user) return ctx.reply(errorMsg('Please tap /start first.'), mainMenu());
-
+    if (!user) return ctx.reply('Please /start first.');
     const min = parseFloat(await getSetting('min_withdraw', String(config.minWithdraw)));
-    if (parseFloat(user.balance) < min) {
-      return ctx.replyWithMarkdown(
-        block([
-          '➖ *Withdraw*',
-          SEP,
-          `Minimum: *${formatUsd(min)}*`,
-          `Your balance: *${formatUsd(user.balance)}*`,
-          '',
-          tip('Earn more from ads or deposit to reach the minimum'),
-        ]),
-        mainMenu()
-      );
-    }
-
+    if (parseFloat(user.balance) < min) return ctx.reply(`Min ${formatUsd(min)}. Balance: ${formatUsd(user.balance)}`, mainMenu());
     ctx.session = { step: 'wd_amount' };
-    await ctx.replyWithMarkdown(
-      block([
-        '➖ *Withdraw USDT*',
-        SEP,
-        `Available: *${formatUsd(user.balance)}*`,
-        `Minimum: *${formatUsd(min)}*`,
-        '',
-        stepProgress(1, 3, 'Enter the *amount* to withdraw'),
-        '',
-        tip('Paid manually by admin from Trust wallet after review'),
-      ]),
-      cancelInline()
-    );
+    await ctx.reply(`📤 *Withdraw*\nBalance: ${formatUsd(user.balance)}\nMin: ${formatUsd(min)}\n\nEnter amount:`, { parse_mode: 'Markdown', ...cancelInline() });
   });
 };
