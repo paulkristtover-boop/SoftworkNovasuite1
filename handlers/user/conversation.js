@@ -286,7 +286,7 @@ async function handleConversation(ctx, next) {
       await pool.query(`INSERT INTO support_tickets (user_id, message) VALUES ($1, $2)`, [ctx.from.id, text]);
       ctx.session = {};
       await ctx.replyWithMarkdown(
-        success('Ticket created', tip('Support will reply as soon as possible')),
+        success('Ticket created', tip('You will get a Telegram message when support replies · check My tickets anytime')),
         mainMenu()
       );
       for (const aid of config.adminIds) {
