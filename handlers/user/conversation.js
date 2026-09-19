@@ -124,8 +124,23 @@ async function handleConversation(ctx, next) {
         try {
           await ctx.telegram.sendMessage(
             aid,
-            `🆕 Campaign #${ad.id}\nFrom: ${ctx.from.id}\n${ad.title}\nBudget: ${ad.budget} USDT`,
-            require('../../keyboards/admin').adModeration(ad.id)
+            [
+              `🆕 *Campaign review* #${ad.id}`,
+              ``,
+              `*Title:* ${ad.title}`,
+              `*Type:* ${ad.type}`,
+              `*URL:* ${ad.url}`,
+              `*Reward:* ${ad.reward} USDT / view`,
+              `*Budget:* ${ad.budget} USDT`,
+              `*Owner:* ${ctx.from.id} (@${ctx.from.username || 'n/a'})`,
+              ``,
+              `_Open the URL, then Activate or Reject_`,
+            ].join('
+'),
+            {
+              parse_mode: 'Markdown',
+              ...require('../../keyboards/admin').adModeration(ad.id),
+            }
           );
         } catch (_) {}
       }

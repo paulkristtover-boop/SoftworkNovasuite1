@@ -6,13 +6,14 @@ import { formatUsd, formatDate } from '@/lib/format';
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
-  const [users, bal, pd, pw, ads, tb, fraud, recentDep, recentWd, recentUsers] =
+  const [users, bal, pd, pw, ads, pendingAds, tb, fraud, recentDep, recentWd, recentUsers] =
     await Promise.all([
       query(`SELECT COUNT(*)::int AS c FROM users`),
       query(`SELECT COALESCE(SUM(balance),0) AS s FROM users`),
       query(`SELECT COUNT(*)::int AS c FROM deposits WHERE status='pending'`),
       query(`SELECT COUNT(*)::int AS c FROM withdrawals WHERE status='pending'`),
       query(`SELECT COUNT(*)::int AS c FROM ads WHERE status='active'`),
+      query(`SELECT COUNT(*)::int AS c FROM ads WHERE status='pending'`),
       query(`SELECT value FROM settings WHERE key='treasury_balance'`),
       query(
         `SELECT COUNT(*)::int AS c FROM fraud_events WHERE created_at > NOW() - INTERVAL '24 hours'`
@@ -35,7 +36,7 @@ export default async function DashboardPage() {
 
   const pendingDep = pd.rows[0].c;
   const pendingWd = pw.rows[0].c;
-  const actionNeeded = pendingDep + pendingWd;
+  const actionNeeded = pendingDep + pendingWd + pendingAds.rows[0].c;
 
   return (
     <AdminShell title="Dashboard">
@@ -67,6 +68,11 @@ export default async function DashboardPage() {
           <div className="label">Pending withdrawals</div>
           <div className="value">{pendingWd}</div>
           <div className="card-hint">Awaiting payout</div>
+        </Link>
+        <Link href="/ads?status=pending" className="card card-accent-amber">
+          <div className="label">Ads to review</div>
+          <div className="value">{pendingAds.rows[0].c}</div>
+          <div className="card-hint">Pending approval</div>
         </Link>
         <Link href="/ads?status=active" className="card card-accent-sky">
           <div className="label">Active campaigns</div>
@@ -109,7 +115,15 @@ export default async function DashboardPage() {
                   <Link href="/withdrawals?status=pending" style={{ color: 'var(--accent-hover)', fontWeight: 600 }}>
                     {pendingWd} withdrawal{pendingWd === 1 ? '' : 's'}
                   </Link>
-                  {' need payout.'}
+                  {' need payout. '}
+                </>
+              )}
+              {pendingAds.rows[0].c > 0 && (
+                <>
+                  <Link href="/ads?status=pending" style={{ color: 'var(--accent-hover)', fontWeight: 600 }}>
+                    {pendingAds.rows[0].c} campaign{pendingAds.rows[0].c === 1 ? '' : 's'}
+                  </Link>
+                  {' need review.'}
                 </>
               )}
             </p>
