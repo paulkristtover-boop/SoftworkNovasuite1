@@ -98,15 +98,16 @@ export default async function DepositsPage({ searchParams }) {
   );
 
   return (
-    <AdminShell title="Deposits — Review">
+    <AdminShell title="Deposits">
+      <div className="page-header">
+        <h2>Deposit review</h2>
+        <p>Complete the checklist before approving. Credits user balance, treasury, and audit log — same as the bot path.</p>
+      </div>
       <div className="filters">
         {['pending', 'approved', 'rejected', 'all'].map((s) => (
           <a key={s} href={`?status=${s}`} className={status === s ? 'active' : ''}>{s}</a>
         ))}
       </div>
-      <p className="muted" style={{ marginBottom: 12 }}>
-        Matches bot deposit flow. Checklist required. Duplicate TxIDs blocked by unique index.
-      </p>
       {res.rows.map((d) => (
         <div key={d.id} className="form-card" style={{ maxWidth: '100%' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>

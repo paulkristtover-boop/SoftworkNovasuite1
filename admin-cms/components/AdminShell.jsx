@@ -1,15 +1,26 @@
 import { Sidebar } from './Sidebar';
 
-export function AdminShell({ title, children }) {
+export function AdminShell({ title, children, subtitle }) {
   return (
     <div className="layout">
       <Sidebar />
       <div className="main">
         <header className="topbar">
-          <h1 style={{ fontSize: '1rem' }}>{title}</h1>
-          <span className="muted">Admin CMS · USDT</span>
+          <h1>{title}</h1>
+          <div className="topbar-meta">
+            <span className="pill pill-live">USDT</span>
+            <span className="pill">Operations</span>
+          </div>
         </header>
-        <div className="page">{children}</div>
+        <div className="page">
+          {subtitle ? (
+            <div className="page-header">
+              <h2>{title}</h2>
+              <p>{subtitle}</p>
+            </div>
+          ) : null}
+          {children}
+        </div>
       </div>
     </div>
   );
