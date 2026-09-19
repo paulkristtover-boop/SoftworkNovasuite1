@@ -1,7 +1,7 @@
 {
   "name": "novasuite-bot",
   "version": "1.0.0",
-  "description": "NovaSuite Telegram bot – user PTC + admin notifications (Telegraf). Deploy on Railway.",
+  "description": "NovaSuite Telegram bot \u2013 user PTC + admin notifications (Telegraf). Deploy on Railway.",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js",
@@ -19,6 +19,6 @@
     "nodemon": "^3.1.7"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": "20.x"
   }
 }

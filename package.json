@@ -2,7 +2,7 @@
   "name": "novasuite",
   "version": "1.0.0",
   "private": true,
-  "description": "NovaSuite PTC – Telegraf bot (Railway) + Next.js CMS (Vercel) + PostgreSQL",
+  "description": "NovaSuite PTC \u2013 Telegraf bot (Railway) + Next.js CMS (Vercel) + PostgreSQL",
   "main": "bot/bot.js",
   "scripts": {
     "start": "node database/migrate.js && node bot/bot.js",
@@ -14,6 +14,6 @@
     "cms:build": "npm install --prefix cms && npm run build --prefix cms"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": "20.x"
   }
 }
