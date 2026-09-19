@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 export default function LoginPage() {
   const [password, setPassword] = useState('');
@@ -36,6 +37,9 @@ export default function LoginPage() {
   return (
     <div className="login-page">
       <div className="login-box">
+        <div className="login-theme">
+          <ThemeToggle />
+        </div>
         <div className="login-logo">NS</div>
         <h1>NovaSuite</h1>
         <p className="sub">Admin operations · USDT</p>
@@ -45,6 +49,7 @@ export default function LoginPage() {
             <label>Password</label>
             <input
               type="password"
+              className="form-control"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -53,7 +58,7 @@ export default function LoginPage() {
               placeholder="ADMIN_CMS_PASSWORD"
             />
           </div>
-          <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: 4 }} disabled={loading}>
+          <button type="submit" className="btn btn-primary w-100" style={{ marginTop: 4 }} disabled={loading}>
             {loading ? 'Signing in…' : 'Sign in to dashboard'}
           </button>
         </form>
