@@ -7,6 +7,6 @@ node_modules/
 .DS_Store
 dist/
 build/
+.vercel
 uploads/*
 !uploads/.gitkeep
-.vercel

@@ -2,17 +2,16 @@
   "name": "novasuite",
   "version": "1.0.0",
   "private": true,
-  "description": "NovaSuite PTC – Telegraf bot (Railway) + Next.js Admin CMS (Vercel) + one PostgreSQL",
+  "description": "NovaSuite PTC – Telegraf bot (Railway) + Next.js CMS (Vercel) + PostgreSQL",
   "main": "bot/bot.js",
   "scripts": {
     "start": "node database/migrate.js && node bot/bot.js",
     "bot": "node bot/bot.js",
+    "bot:dev": "npm install --prefix bot && npx --prefix bot nodemon bot/bot.js",
     "db:migrate": "npm install --prefix database && node database/migrate.js",
     "db:seed": "node database/seed.js",
-    "bot:dev": "npm install --prefix bot && npx --prefix bot nodemon bot/bot.js",
     "cms:dev": "npm install --prefix cms && npm run dev --prefix cms",
-    "cms:build": "npm install --prefix cms && npm run build --prefix cms",
-    "vercel-build": "echo \"ERROR: Set Vercel Root Directory to cms\" && exit 1"
+    "cms:build": "npm install --prefix cms && npm run build --prefix cms"
   },
   "engines": {
     "node": ">=18.0.0"

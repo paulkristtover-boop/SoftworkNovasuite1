@@ -7,8 +7,5 @@ cmds = [
   "npm install --prefix database --omit=dev"
 ]
 
-[phases.build]
-cmds = ["echo 'NovaSuite bot – no build step'"]
-
 [start]
 cmd = "node database/migrate.js && node bot/bot.js"
