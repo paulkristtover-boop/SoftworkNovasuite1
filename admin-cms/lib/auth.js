@@ -1,38 +1,73 @@
 import { SignJWT, jwtVerify } from 'jose';
 import { cookies } from 'next/headers';
+import { randomBytes, timingSafeEqual } from 'crypto';
 import { query } from './db';
-import crypto from 'crypto';
 
 const COOKIE = 'novasuite_cms';
 
-function secret() {
+function getSecret() {
   const s = process.env.ADMIN_CMS_SECRET;
-  if (!s || s.length < 16) throw new Error('ADMIN_CMS_SECRET must be set (≥16 chars)');
-  return new TextEncoder().encode(s);
+  if (!s || String(s).length < 16) {
+    throw new Error('ADMIN_CMS_SECRET missing or shorter than 16 characters');
+  }
+  return new TextEncoder().encode(String(s));
 }
 
 function maxAgeSec() {
   const h = parseInt(process.env.SESSION_MAX_AGE_HOURS || '8', 10);
-  return h * 3600;
+  return (Number.isFinite(h) && h > 0 ? h : 8) * 3600;
+}
+
+async function ensureSessionsTable() {
+  await query(`
+    CREATE TABLE IF NOT EXISTS cms_sessions (
+      id VARCHAR(64) PRIMARY KEY,
+      admin_label VARCHAR(100),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      last_seen_at TIMESTAMPTZ DEFAULT NOW(),
+      ip VARCHAR(45),
+      user_agent TEXT,
+      revoked BOOLEAN DEFAULT FALSE
+    )
+  `);
 }
 
 export async function createSession(ip, userAgent) {
-  const sessionId = crypto.randomBytes(32).toString('hex');
+  const sessionId = randomBytes(32).toString('hex');
   const expires = new Date(Date.now() + maxAgeSec() * 1000);
-  await query(
-    `INSERT INTO cms_sessions (id, admin_label, expires_at, ip, user_agent)
-     VALUES ($1,$2,$3,$4,$5)`,
-    [sessionId, process.env.ADMIN_CMS_USERNAME || 'admin', expires.toISOString(), ip || null, userAgent || null]
-  );
-  const token = await new SignJWT({ sid: sessionId, role: 'admin' })
+
+  try {
+    await ensureSessionsTable();
+    await query(
+      `INSERT INTO cms_sessions (id, admin_label, expires_at, ip, user_agent)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [
+        sessionId,
+        process.env.ADMIN_CMS_USERNAME || 'admin',
+        expires.toISOString(),
+        ip ? String(ip).slice(0, 45) : null,
+        userAgent ? String(userAgent).slice(0, 500) : null,
+      ]
+    );
+  } catch (err) {
+    console.error('[cms] session row insert:', err.message);
+  }
+
+  const token = await new SignJWT({
+    sid: sessionId,
+    role: 'admin',
+    sub: process.env.ADMIN_CMS_USERNAME || 'admin',
+  })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
-    .setExpirationTime(`${Math.floor(maxAgeSec() / 3600)}h`)
-    .sign(secret());
+    .setExpirationTime(`${Math.max(1, Math.floor(maxAgeSec() / 3600))}h`)
+    .sign(getSecret());
+
   cookies().set(COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    sameSite: 'lax',
     path: '/',
     maxAge: maxAgeSec(),
   });
@@ -42,9 +77,9 @@ export async function destroySession() {
   const token = cookies().get(COOKIE)?.value;
   if (token) {
     try {
-      const { payload } = await jwtVerify(token, secret());
+      const { payload } = await jwtVerify(token, getSecret());
       if (payload.sid) {
-        await query(`UPDATE cms_sessions SET revoked=TRUE WHERE id=$1`, [payload.sid]);
+        await query(`UPDATE cms_sessions SET revoked=TRUE WHERE id=$1`, [payload.sid]).catch(() => {});
       }
     } catch (_) {}
   }
@@ -55,25 +90,19 @@ export async function getSession() {
   const token = cookies().get(COOKIE)?.value;
   if (!token) return null;
   try {
-    const { payload } = await jwtVerify(token, secret());
-    if (!payload.sid) return null;
-    const res = await query(
-      `SELECT * FROM cms_sessions WHERE id=$1 AND revoked=FALSE AND expires_at > NOW()`,
-      [payload.sid]
-    );
-    if (!res.rows[0]) return null;
-    await query(`UPDATE cms_sessions SET last_seen_at=NOW() WHERE id=$1`, [payload.sid]);
-    return payload;
+    const { payload } = await jwtVerify(token, getSecret());
+    return payload || null;
   } catch {
     return null;
   }
 }
 
 export function verifyPassword(input) {
-  const expected = process.env.ADMIN_CMS_PASSWORD || '';
-  if (!expected || !input) return false;
+  const expected = process.env.ADMIN_CMS_PASSWORD;
+  if (!expected) throw new Error('ADMIN_CMS_PASSWORD is not set');
+  if (!input) return false;
   const a = Buffer.from(String(input));
   const b = Buffer.from(String(expected));
   if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
+  return timingSafeEqual(a, b);
 }
