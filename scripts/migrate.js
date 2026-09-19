@@ -22,6 +22,10 @@ async function migrate() {
       ['terms_url', process.env.TERMS_URL || ''],
       ['privacy_url', process.env.PRIVACY_URL || ''],
       ['welcome_message', 'Welcome to NovaSuite! View ads, earn USDT, advertise bots & channels.'],
+      ['welcome_bonus_amount', process.env.WELCOME_BONUS_AMOUNT || '0.5'],
+      ['welcome_bonus_limit', process.env.WELCOME_BONUS_LIMIT || '30'],
+      ['channel_url', process.env.CHANNEL_URL || 'https://t.me/SoftworkNovaSuite'],
+      ['group_url', process.env.GROUP_URL || 'https://t.me/softworknovasuitecommunity'],
     ];
     for (const [k, v] of defaults) {
       await client.query(

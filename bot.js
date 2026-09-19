@@ -10,6 +10,7 @@ const { pool } = require('./database');
 const { logger } = require('./utils/logger');
 const { rateLimit } = require('./middleware/rateLimit');
 const { banCheck } = require('./middleware/banCheck');
+const { requireMembership } = require('./middleware/requireMembership');
 const { registerUserHandlers } = require('./handlers/user');
 const { registerAdminHandlers } = require('./handlers/admin');
 const { startJobs } = require('./jobs');
@@ -23,6 +24,7 @@ const bot = new Telegraf(config.botToken);
 bot.use(session());
 bot.use(rateLimit);
 bot.use(banCheck);
+bot.use(requireMembership());
 bot.use(async (ctx, next) => {
   ctx.state = ctx.state || {};
   return next();
@@ -38,10 +40,48 @@ bot.catch((err, ctx) => {
   } catch (_) {}
 });
 
+async function setupBotProfile(telegram) {
+  // "What can this bot do?" — long description
+  const description = [
+    'NovaSuite is a paid-to-click (PTC) platform in USDT.',
+    '',
+    'What this bot can do:',
+    '• Earn USDT by viewing verified ads',
+    '• Promote your bot, website, or channel',
+    '• Invite friends and earn referral bonuses',
+    '• Deposit and withdraw USDT',
+    '• Submit ideas and contact support',
+    '',
+    'Join the community:',
+    'Channel: https://t.me/SoftworkNovaSuite',
+    'Group: https://t.me/softworknovasuitecommunity',
+    '',
+    'Welcome bonus for the first 30 members after joining channel & group.',
+  ].join('\n');
+
+  // Short description (bot profile subtitle)
+  const shortDescription = 'Earn USDT · View ads · Promote · Referrals · Softwork NovaSuite';
+
+  await telegram.setMyDescription(description);
+  await telegram.setMyShortDescription(shortDescription);
+
+  await telegram.setMyCommands([
+    { command: 'start', description: 'Open NovaSuite & claim welcome bonus' },
+  ]);
+
+  logger.info('Bot profile (description + commands) updated');
+}
+
 async function start() {
   await pool.query('SELECT 1');
   logger.info('PostgreSQL connected');
   startJobs(bot);
+
+  try {
+    await setupBotProfile(bot.telegram);
+  } catch (e) {
+    logger.warn('Could not set bot description/commands:', e.message);
+  }
 
   if (config.useWebhook && config.webhookUrl) {
     const express = require('express');

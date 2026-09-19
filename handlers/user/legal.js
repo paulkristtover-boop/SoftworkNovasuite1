@@ -5,11 +5,16 @@ const config = require('../../config');
 
 module.exports = function legalHandler(bot) {
   bot.hears('ℹ️ Info', async (ctx) => {
+    const channel = (await getSetting('channel_url', '')) || config.channelUrl || 'https://t.me/SoftworkNovaSuite';
+    const group = (await getSetting('group_url', '')) || config.groupUrl || 'https://t.me/softworknovasuitecommunity';
     await ctx.replyWithMarkdown(
       block([
         `ℹ️ *${brandName()} Info*`,
         SEP,
         'Choose a topic below.',
+        '',
+        `📢 Channel: ${channel}`,
+        `💬 Group: ${group}`,
       ]),
       infoMenu()
     );

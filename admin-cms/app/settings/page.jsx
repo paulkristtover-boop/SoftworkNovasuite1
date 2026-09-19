@@ -6,9 +6,13 @@ export const dynamic = 'force-dynamic';
 const KEYS = [
   'platform_name',
   'welcome_message',
+  'welcome_bonus_amount',
+  'welcome_bonus_limit',
   'min_withdraw',
   'referral_bonus_percent',
   'support_username',
+  'channel_url',
+  'group_url',
   'terms_url',
   'privacy_url',
   'trust_wallet_address',

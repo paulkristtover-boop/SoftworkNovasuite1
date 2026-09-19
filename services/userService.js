@@ -10,7 +10,8 @@ async function findOrCreateUser(from, referralCode = null) {
        WHERE telegram_id=$5`,
       [from.username || null, from.first_name || null, from.last_name || null, from.language_code || 'en', from.id]
     );
-    return (await pool.query('SELECT * FROM users WHERE telegram_id=$1', [from.id])).rows[0];
+    const user = (await pool.query('SELECT * FROM users WHERE telegram_id=$1', [from.id])).rows[0];
+    return { user, isNew: false };
   }
 
   const code = generateReferralCode(from.id);
@@ -31,7 +32,7 @@ async function findOrCreateUser(from, referralCode = null) {
       [referredBy, from.id]
     );
   }
-  return res.rows[0];
+  return { user: res.rows[0], isNew: true };
 }
 
 async function getUser(telegramId) {
