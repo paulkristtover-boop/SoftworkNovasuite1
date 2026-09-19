@@ -1,14 +1,24 @@
 const { getAvailableAdForUser, startAdView, completeAdView } = require('../../services/adService');
 const { formatUsd } = require('../../utils/helpers');
-const { mainMenu } = require('../../keyboards/user');
-const { Markup } = require('telegraf');
+const {
+  mainMenu,
+  earnAdKeyboard,
+  earnViewingKeyboard,
+  earnNextKeyboard,
+} = require('../../keyboards/user');
+const { block, SEP, tip, errorMsg } = require('../../utils/ui');
 
 module.exports = function earnHandler(bot) {
-  bot.hears('👀 Earn (View Ads)', async (ctx) => showAd(ctx));
+  bot.hears('⚡ Earn', async (ctx) => showAd(ctx));
 
   bot.action('ad_skip', async (ctx) => {
+    await ctx.answerCbQuery('Skipped');
+    await showAd(ctx, true);
+  });
+
+  bot.action('ad_next', async (ctx) => {
     await ctx.answerCbQuery();
-    await showAd(ctx);
+    await showAd(ctx, true);
   });
 
   bot.action(/^ad_start:(\d+)$/, async (ctx) => {
@@ -21,15 +31,18 @@ module.exports = function earnHandler(bot) {
       ctx.session.viewStarted = Date.now();
       await ctx.answerCbQuery();
       await ctx.editMessageText(
-        `👀 *Viewing Ad #${ad.id}*\n\n*${ad.title}*\nOpen the link, wait *${durationSec}s*, then confirm.`,
-        {
-          parse_mode: 'Markdown',
-          ...Markup.inlineKeyboard([
-            [Markup.button.url('🔗 Open Link', ad.url)],
-            [Markup.button.callback('✅ I Completed the View', `ad_done:${adId}`)],
-            [Markup.button.callback('⏭ Skip', 'ad_skip')],
-          ]),
-        }
+        block([
+          '▶ *Verified view in progress*',
+          SEP,
+          `*${ad.title}*`,
+          '',
+          `1. Open the link below`,
+          `2. Stay at least *${durationSec} seconds*`,
+          `3. Tap *I completed the view*`,
+          '',
+          tip('Leaving early will not credit a reward'),
+        ]),
+        { parse_mode: 'Markdown', ...earnViewingKeyboard(adId, ad.url) }
       );
     } catch (e) {
       await ctx.answerCbQuery(e.message, { show_alert: true });
@@ -40,50 +53,72 @@ module.exports = function earnHandler(bot) {
     const adId = parseInt(ctx.match[1], 10);
     const token = ctx.session?.viewToken;
     if (!token || ctx.session?.viewAdId !== adId) {
-      return ctx.answerCbQuery('Start the ad first (Open Link flow).', { show_alert: true });
+      return ctx.answerCbQuery('Start the verified view first.', { show_alert: true });
     }
     try {
       const result = await completeAdView(adId, ctx.from.id, token);
       ctx.session.viewToken = null;
       await ctx.answerCbQuery(`+${formatUsd(result.reward)}`);
       await ctx.editMessageText(
-        `✅ Credited *${formatUsd(result.reward)}*`,
-        {
-          parse_mode: 'Markdown',
-          ...Markup.inlineKeyboard([[Markup.button.callback('👀 Next Ad', 'ad_next')]]),
-        }
+        block([
+          '✅ *Reward credited*',
+          SEP,
+          `You earned *${formatUsd(result.reward)}*`,
+          '',
+          tip('Keep going — more ads mean more USDT'),
+        ]),
+        { parse_mode: 'Markdown', ...earnNextKeyboard() }
       );
     } catch (e) {
       await ctx.answerCbQuery(e.message, { show_alert: true });
     }
-  });
-
-  bot.action('ad_next', async (ctx) => {
-    await ctx.answerCbQuery();
-    await showAd(ctx, true);
   });
 };
 
 async function showAd(ctx, edit = false) {
   const result = await getAvailableAdForUser(ctx.from.id);
   if (result.error) {
-    const msg = `📭 ${result.error}`;
-    if (edit) await ctx.editMessageText(msg).catch(() => ctx.reply(msg, mainMenu()));
-    else await ctx.reply(msg, mainMenu());
+    const msg = block(['📭 *No ads right now*', SEP, result.error, '', tip('Try again later or check back soon')]);
+    if (edit) {
+      try {
+        await ctx.editMessageText(msg, { parse_mode: 'Markdown', ...earnNextKeyboard() });
+      } catch {
+        await ctx.replyWithMarkdown(msg, mainMenu());
+      }
+    } else {
+      await ctx.replyWithMarkdown(msg, mainMenu());
+    }
     return;
   }
   if (!result.ad) {
-    const msg = '📭 No ads available right now. Check back later.';
-    if (edit) await ctx.editMessageText(msg).catch(() => {});
-    else await ctx.reply(msg, mainMenu());
+    const msg = block(['📭 *No ads available*', SEP, 'Check back later for new campaigns.']);
+    if (edit) {
+      try {
+        await ctx.editMessageText(msg, { parse_mode: 'Markdown' });
+      } catch {
+        await ctx.replyWithMarkdown(msg, mainMenu());
+      }
+    } else {
+      await ctx.replyWithMarkdown(msg, mainMenu());
+    }
     return;
   }
+
   const ad = result.ad;
-  const text = `👀 *Ad #${ad.id}*\n\n*${ad.title}*\n${ad.description || ''}\n\nType: ${ad.type}\nReward: *${formatUsd(ad.reward)}*\n⏱ Required view: ~${ad.duration_sec || 15}s`;
-  const kb = Markup.inlineKeyboard([
-    [Markup.button.callback('▶️ Start Verified View', `ad_start:${ad.id}`)],
-    [Markup.button.callback('⏭ Skip', 'ad_skip')],
+  const text = block([
+    '⚡ *Earn USDT*',
+    SEP,
+    `*${ad.title}*`,
+    ad.description ? `_${ad.description.slice(0, 120)}_` : null,
+    '',
+    `• Type: ${ad.type || 'campaign'}`,
+    `• Reward: *${formatUsd(ad.reward)}*`,
+    `• View time: ~${ad.duration_sec || 15}s`,
+    '',
+    tip('Start a verified view to receive credit'),
   ]);
+
+  const kb = earnAdKeyboard(ad.id);
   if (edit) {
     try {
       await ctx.editMessageText(text, { parse_mode: 'Markdown', ...kb });

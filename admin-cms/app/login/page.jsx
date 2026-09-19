@@ -36,8 +36,9 @@ export default function LoginPage() {
   return (
     <div className="login-page">
       <div className="login-box">
+        <div className="login-logo">NS</div>
         <h1>NovaSuite</h1>
-        <p className="sub">Admin CMS</p>
+        <p className="sub">Admin operations · USDT</p>
         {error ? <div className="error">{error}</div> : null}
         <form onSubmit={onSubmit}>
           <div className="form-group">
@@ -49,10 +50,11 @@ export default function LoginPage() {
               required
               autoFocus
               autoComplete="current-password"
+              placeholder="ADMIN_CMS_PASSWORD"
             />
           </div>
-          <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={loading}>
-            {loading ? 'Signing in…' : 'Sign in'}
+          <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: 4 }} disabled={loading}>
+            {loading ? 'Signing in…' : 'Sign in to dashboard'}
           </button>
         </form>
       </div>

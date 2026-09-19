@@ -13,6 +13,7 @@ const { mainMenu } = require('../../keyboards/user');
 
 function registerUserHandlers(bot) {
   bot.on('text', handleConversation);
+
   startHandler(bot);
   balanceHandler(bot);
   earnHandler(bot);
@@ -23,6 +24,12 @@ function registerUserHandlers(bot) {
   ideaHandler(bot);
   supportHandler(bot);
   legalHandler(bot);
-  bot.action('cancel', async (ctx) => { await ctx.answerCbQuery(); ctx.session = {}; await ctx.reply('Cancelled.', mainMenu()); });
+
+  bot.action('cancel', async (ctx) => {
+    await ctx.answerCbQuery('Cancelled');
+    ctx.session = {};
+    await ctx.reply('Cancelled. You are back at the main menu.', mainMenu());
+  });
 }
+
 module.exports = { registerUserHandlers };
