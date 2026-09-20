@@ -10,10 +10,19 @@ module.exports = function balanceHandler(bot) {
     const user = await getUser(ctx.from.id);
     if (!user) return ctx.reply(errorMsg('Please tap /start first.'), mainMenu());
 
+    const wb = await pool.query(
+      `SELECT amount, created_at FROM transactions WHERE user_id=$1 AND type='welcome_bonus' ORDER BY id ASC LIMIT 1`,
+      [ctx.from.id]
+    );
+    const welcomeLine = wb.rows[0]
+      ? ['Welcome credit', `✅ ${formatUsd(wb.rows[0].amount)} received`]
+      : ['Welcome credit', '_Not credited yet — join & verify if eligible_'];
+
     const text = card('💼 Your Wallet', [
       ['Available', `*${formatUsd(user.balance)}*`],
       ['Total earned', formatUsd(user.total_earned)],
       ['Total withdrawn', formatUsd(user.total_withdrawn)],
+      welcomeLine,
       ['Account ID', `\`${user.telegram_id}\``],
     ]);
 

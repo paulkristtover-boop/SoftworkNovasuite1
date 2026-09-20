@@ -24,6 +24,7 @@ const sections = [
       { href: '/users', label: 'Users', icon: '◎' },
       { href: '/ads', label: 'Campaigns', icon: '▣' },
       { href: '/bonuses', label: 'Bonuses', icon: '🎁' },
+      { href: '/broadcast', label: 'Broadcast', icon: '📡' },
     ],
   },
   {
