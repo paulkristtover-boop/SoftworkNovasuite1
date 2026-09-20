@@ -70,7 +70,7 @@ module.exports = function legalHandler(bot) {
       '2. *Promote* — pay from balance to run your own campaigns.',
       '3. *Refer* — share your link and earn a % of friends’ rewards.',
       '4. *Deposit* — send USDT, submit TxID, wait for approval.',
-      '5. *Withdraw* — request payout; admin pays to your wallet.',
+      '5. *Withdraw* — request payout; admin pays to your wallet.\n\n_Tip: Telegram does not support the phone Back button inside bots — use « Main menu or Cancel on screen._',
     ]);
     await ctx.editMessageText(text, { parse_mode: 'Markdown', ...backHome() }).catch(async () => {
       await ctx.replyWithMarkdown(text, mainMenu());

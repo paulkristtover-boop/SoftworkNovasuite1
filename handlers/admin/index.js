@@ -74,6 +74,33 @@ function registerAdminHandlers(bot) {
     );
   });
 
+  bot.hears('📢 Campaigns', adminOnly, async (ctx) => {
+    const pending = await pool.query(
+      `SELECT id, title, type, reward, budget, status, owner_id FROM ads WHERE status='pending' ORDER BY created_at ASC LIMIT 15`
+    );
+    const active = await pool.query(
+      `SELECT id, title, views_done, spent, budget, status FROM ads WHERE status='active' ORDER BY updated_at DESC LIMIT 10`
+    );
+    let text = '📢 *Campaigns*\n\n*Pending review*\n';
+    if (!pending.rows.length) text += '_None_\n';
+    for (const a of pending.rows) {
+      text += `#${a.id} ${a.title}\n${a.type} · ${a.reward} USDT · budget ${a.budget}\nOwner ${a.owner_id}\n\n`;
+    }
+    text += '*Active*\n';
+    if (!active.rows.length) text += '_None_\n';
+    for (const a of active.rows) {
+      text += `#${a.id} ${a.title} · views ${a.views_done} · spent ${a.spent}/${a.budget}\n`;
+    }
+    text += '\n_Full review & activate: Admin CMS → Campaigns_';
+    await ctx.replyWithMarkdown(text, adminMenu());
+    for (const a of pending.rows) {
+      await ctx.reply(
+        `Review #${a.id}`,
+        require('../../keyboards/admin').adModeration(a.id)
+      );
+    }
+  });
+
   bot.hears('🏦 Treasury', adminOnly, async (ctx) => {
     const tb = await getSetting('treasury_balance', '0');
     const addr = await getSetting('trust_wallet_address', config.trustWalletAddress);
@@ -171,9 +198,28 @@ function registerAdminHandlers(bot) {
   });
 
   bot.action(/^adm_ad_ok:(\d+)$/, adminOnly, async (ctx) => {
-    await setAdStatus(parseInt(ctx.match[1], 10), 'active');
+    const adId = parseInt(ctx.match[1], 10);
+    const ad = await setAdStatus(adId, 'active');
     await ctx.answerCbQuery('Activated');
-    await ctx.editMessageText(`✅ Ad #${ctx.match[1]} ACTIVE`);
+    await ctx.editMessageText(`✅ Ad #${adId} ACTIVE`);
+    try {
+      if (ad?.owner_id) {
+        await ctx.telegram.sendMessage(
+          ad.owner_id,
+          `✅ Campaign #${adId} activated\n${ad.title}\nUsers can now Earn on it.`
+        );
+      }
+      const users = await pool.query(
+        `SELECT telegram_id FROM users WHERE COALESCE(is_banned,FALSE)=FALSE AND telegram_id <> $1
+         ORDER BY last_active_at DESC NULLS LAST LIMIT 300`,
+        [ad?.owner_id || 0]
+      );
+      const msg = `⚡ New campaign live\n${ad?.title || '#' + adId}\nReward: ${ad?.reward} USDT\nOpen Earn in the bot.`;
+      for (const u of users.rows) {
+        try { await ctx.telegram.sendMessage(u.telegram_id, msg); } catch (_) {}
+        await new Promise((r) => setTimeout(r, 35));
+      }
+    } catch (_) {}
   });
 
   bot.action(/^adm_ad_no:(\d+)$/, adminOnly, async (ctx) => {

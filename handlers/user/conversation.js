@@ -33,6 +33,7 @@ const MENU = new Set([
   '📥 Pending Deposits',
   '📤 Pending Withdrawals',
   '📊 Stats',
+  '📢 Campaigns',
   '🏦 Treasury',
   '⚙️ CMS Link',
   '⚙️ Settings',
@@ -68,11 +69,20 @@ async function handleConversation(ctx, next) {
     }
 
     if (step === 'ad_url') {
-      let url = text;
-      if (!url.startsWith('http') && !url.startsWith('t.me')) {
-        return ctx.reply(errorMsg('Send a valid URL.'), cancelInline());
-      }
+      let url = text.trim();
+      // Accept https, http, t.me, spotify:, open.spotify.com without scheme
       if (url.startsWith('t.me')) url = 'https://' + url;
+      if (url.startsWith('open.spotify.com') || url.startsWith('spotify.com')) url = 'https://' + url;
+      if (url.startsWith('spotify:')) {
+        // keep deep link — Telegram url buttons need https; convert common form
+        url = url.replace(/^spotify:track:/, 'https://open.spotify.com/track/')
+                 .replace(/^spotify:album:/, 'https://open.spotify.com/album/')
+                 .replace(/^spotify:playlist:/, 'https://open.spotify.com/playlist/')
+                 .replace(/^spotify:artist:/, 'https://open.spotify.com/artist/');
+      }
+      if (!/^https?:\/\//i.test(url)) {
+        return ctx.reply(errorMsg('Send a full link (https://… or open.spotify.com/…)'), cancelInline());
+      }
       ctx.session.ad.url = url;
       ctx.session.step = 'ad_type';
       return ctx.replyWithMarkdown(block([stepProgress(2, 4, 'Select campaign *type*')]), adTypeKeyboard());

@@ -11,14 +11,27 @@ async function createAd({ ownerId, title, description, url, type, reward, budget
     await client.query('BEGIN');
     const u = await client.query('SELECT balance FROM users WHERE telegram_id=$1 FOR UPDATE', [ownerId]);
     if (!u.rows[0] || parseFloat(u.rows[0].balance) < budget) throw new Error('Insufficient balance for ad budget');
-    const count = await client.query(`SELECT COUNT(*) FROM ads WHERE owner_id=$1 AND status IN ('pending','active','paused')`, [ownerId]);
+    const count = await client.query(
+      `SELECT COUNT(*) FROM ads WHERE owner_id=$1 AND status IN ('pending','active','paused')`,
+      [ownerId]
+    );
     if (parseInt(count.rows[0].count, 10) >= config.maxAdsPerUser) throw new Error('Too many active ads');
     const newBal = parseFloat(u.rows[0].balance) - budget;
     await client.query('UPDATE users SET balance=$1, updated_at=NOW() WHERE telegram_id=$2', [newBal, ownerId]);
     const res = await client.query(
       `INSERT INTO ads (owner_id, title, description, url, type, reward, budget, max_views, duration_sec, status)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending') RETURNING *`,
-      [ownerId, title, description || null, url, type || 'website', reward, budget, maxViews || null, durationSec || config.adViewDurationSec]
+      [
+        ownerId,
+        title,
+        description || null,
+        url,
+        type || 'website',
+        reward,
+        budget,
+        maxViews || null,
+        durationSec || config.adViewDurationSec,
+      ]
     );
     await client.query(
       `INSERT INTO transactions (user_id, type, amount, balance_after, reference_id, reference_type, note, idempotency_key)
@@ -47,14 +60,28 @@ async function getAvailableAdForUser(userId) {
        AND (a.max_views IS NULL OR a.views_done < a.max_views)
        AND a.spent + a.reward <= a.budget
        AND a.owner_id != $1
-       AND NOT EXISTS (SELECT 1 FROM ad_views av WHERE av.ad_id=a.id AND av.user_id=$1 AND av.verified=TRUE)
+       AND NOT EXISTS (
+         SELECT 1 FROM ad_views av WHERE av.ad_id=a.id AND av.user_id=$1 AND av.verified=TRUE
+       )
      ORDER BY RANDOM() LIMIT 1`,
     [userId]
   );
   return { ad: res.rows[0] || null };
 }
 
-/** Start verified view — returns token; complete only after duration + token */
+async function listMyAds(ownerId, limit = 20) {
+  const res = await pool.query(
+    `SELECT * FROM ads WHERE owner_id=$1 ORDER BY created_at DESC LIMIT $2`,
+    [ownerId, limit]
+  );
+  return res.rows;
+}
+
+async function getAd(adId) {
+  const res = await pool.query(`SELECT * FROM ads WHERE id=$1`, [adId]);
+  return res.rows[0] || null;
+}
+
 async function startAdView(adId, userId) {
   const limits = await checkDailyLimits(userId);
   if (!limits.ok) throw new Error(limits.reason);
@@ -63,43 +90,54 @@ async function startAdView(adId, userId) {
 
   const ad = await pool.query(`SELECT * FROM ads WHERE id=$1 AND status='active'`, [adId]);
   if (!ad.rows[0]) throw new Error('Ad not available');
+  const row = ad.rows[0];
+  if (parseFloat(row.spent) + parseFloat(row.reward) > parseFloat(row.budget)) {
+    throw new Error('Ad budget exhausted');
+  }
+
   const token = randomToken(16);
   await pool.query(
     `INSERT INTO ad_views (ad_id, user_id, reward, client_token, status, started_at)
      VALUES ($1,$2,$3,$4,'started',NOW())
-     ON CONFLICT (ad_id, user_id) DO UPDATE SET client_token=$4, started_at=NOW(), status='started', verified=FALSE
-     WHERE ad_views.verified=FALSE`,
-    [adId, userId, ad.rows[0].reward, token]
+     ON CONFLICT (ad_id, user_id) DO UPDATE
+       SET client_token=$4, started_at=NOW(), status='started', verified=FALSE, completed_at=NULL
+       WHERE ad_views.verified=FALSE`,
+    [adId, userId, row.reward, token]
   );
-  return { token, durationSec: ad.rows[0].duration_sec || config.adViewDurationSec, ad: ad.rows[0] };
+  const durationSec = parseInt(row.duration_sec, 10) || config.adViewDurationSec;
+  return { token, durationSec, ad: row };
 }
 
 async function completeAdView(adId, userId, clientToken) {
   const client = await pool.connect();
+  let rewardAmount = 0;
   try {
     await client.query('BEGIN');
     const view = await client.query(
       `SELECT * FROM ad_views WHERE ad_id=$1 AND user_id=$2 FOR UPDATE`,
       [adId, userId]
     );
-    if (!view.rows[0]) throw new Error('View session not found. Open the ad first.');
+    if (!view.rows[0]) throw new Error('View session not found. Tap Start verified view first.');
     const v = view.rows[0];
     if (v.verified) throw new Error('Already credited for this ad');
     if (v.client_token !== clientToken) {
       await recordEvent(userId, 'invalid_view_token', 3, { adId });
-      throw new Error('Invalid verification token');
-    }
-    const elapsed = (Date.now() - new Date(v.started_at).getTime()) / 1000;
-    const need = config.adViewDurationSec - 2; // small tolerance
-    if (elapsed < need) {
-      await recordEvent(userId, 'early_complete', 2, { adId, elapsed });
-      throw new Error(`Please view the ad for at least ${config.adViewDurationSec}s`);
+      throw new Error('Invalid session — start the view again');
     }
 
     const adRes = await client.query(`SELECT * FROM ads WHERE id=$1 FOR UPDATE`, [adId]);
     if (!adRes.rows[0] || adRes.rows[0].status !== 'active') throw new Error('Ad not available');
     const ad = adRes.rows[0];
-    if (parseFloat(ad.spent) + parseFloat(ad.reward) > parseFloat(ad.budget)) throw new Error('Ad budget exhausted');
+    const needSec = Math.max(5, (parseInt(ad.duration_sec, 10) || config.adViewDurationSec) - 2);
+    const elapsed = (Date.now() - new Date(v.started_at).getTime()) / 1000;
+    if (elapsed < needSec) {
+      await recordEvent(userId, 'early_complete', 1, { adId, elapsed, needSec });
+      throw new Error(`Please wait at least ${needSec + 2}s with the link open, then confirm again`);
+    }
+
+    if (parseFloat(ad.spent) + parseFloat(ad.reward) > parseFloat(ad.budget)) {
+      throw new Error('Ad budget exhausted');
+    }
 
     await client.query(
       `UPDATE ad_views SET verified=TRUE, completed_at=NOW(), status='completed' WHERE id=$1`,
@@ -115,6 +153,7 @@ async function completeAdView(adId, userId, clientToken) {
       `UPDATE ads SET spent=$1, views_done=$2, status=$3, updated_at=NOW() WHERE id=$4`,
       [newSpent, newViews, status, adId]
     );
+    rewardAmount = parseFloat(ad.reward);
     await client.query('COMMIT');
   } catch (e) {
     await client.query('ROLLBACK');
@@ -123,8 +162,7 @@ async function completeAdView(adId, userId, clientToken) {
     client.release();
   }
 
-  const ad = (await pool.query('SELECT * FROM ads WHERE id=$1', [adId])).rows[0];
-  await updateBalance(userId, parseFloat(ad.reward), 'ad_reward', {
+  await updateBalance(userId, rewardAmount, 'ad_reward', {
     note: `Viewed ad #${adId}`,
     referenceId: adId,
     referenceType: 'ad',
@@ -133,8 +171,9 @@ async function completeAdView(adId, userId, clientToken) {
 
   const user = await pool.query('SELECT referred_by FROM users WHERE telegram_id=$1', [userId]);
   if (user.rows[0]?.referred_by) {
-    const percent = parseFloat(await getSetting('referral_bonus_percent', String(config.referralBonusPercent))) || 10;
-    const bonus = (parseFloat(ad.reward) * percent) / 100;
+    const percent =
+      parseFloat(await getSetting('referral_bonus_percent', String(config.referralBonusPercent))) || 10;
+    const bonus = (rewardAmount * percent) / 100;
     if (bonus > 0) {
       await updateBalance(user.rows[0].referred_by, bonus, 'referral_bonus', {
         note: `Referral from ${userId} ad #${adId}`,
@@ -148,7 +187,7 @@ async function completeAdView(adId, userId, clientToken) {
       );
     }
   }
-  return { reward: ad.reward };
+  return { reward: rewardAmount };
 }
 
 async function setAdStatus(adId, status, adminNote) {
@@ -156,6 +195,15 @@ async function setAdStatus(adId, status, adminNote) {
     `UPDATE ads SET status=$1, admin_note=COALESCE($2, admin_note), updated_at=NOW() WHERE id=$3`,
     [status, adminNote || null, adId]
   );
+  return getAd(adId);
 }
 
-module.exports = { createAd, getAvailableAdForUser, startAdView, completeAdView, setAdStatus };
+module.exports = {
+  createAd,
+  getAvailableAdForUser,
+  startAdView,
+  completeAdView,
+  setAdStatus,
+  listMyAds,
+  getAd,
+};

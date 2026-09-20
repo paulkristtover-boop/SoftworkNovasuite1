@@ -2,7 +2,7 @@ import { AdminShell } from '@/components/AdminShell';
 import { query } from '@/lib/db';
 import { formatUsd, formatDate } from '@/lib/format';
 import { revalidatePath } from 'next/cache';
-import { notifyUser } from '@/lib/telegram';
+import { notifyUser, broadcastMessage } from '@/lib/telegram';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,13 +32,32 @@ async function setAdStatus(formData) {
       [String(id), JSON.stringify(checklist)]
     );
     {
-      const row = await query('SELECT owner_id, title FROM ads WHERE id=$1', [id]);
+      const row = await query('SELECT owner_id, title, reward, type FROM ads WHERE id=$1', [id]);
       const r = row.rows[0];
       if (r) {
         await notifyUser(
           r.owner_id,
           `✅ *Campaign activated*\n\n#${id} · ${r.title}\n\nYour ad is now live for users to view.`
         );
+        // Notify earners (non-banned, not the owner) — capped
+        const users = await query(
+          `SELECT telegram_id FROM users
+           WHERE COALESCE(is_banned,FALSE)=FALSE AND telegram_id <> $1
+           ORDER BY last_active_at DESC NULLS LAST
+           LIMIT 400`,
+          [r.owner_id]
+        );
+        const msg = [
+          '⚡ *New campaign live*',
+          '',
+          `*${r.title}*`,
+          `Reward: $${parseFloat(r.reward).toFixed(4)} USDT`,
+          r.type ? `Type: ${r.type}` : '',
+          '',
+          'Open the bot → *Earn* to view and get paid.',
+        ].filter(Boolean).join('\n');
+        const ids = users.rows.map((u) => u.telegram_id);
+        await broadcastMessage(ids, msg, { delayMs: 35 });
       }
     }
   } else if (status === 'rejected') {

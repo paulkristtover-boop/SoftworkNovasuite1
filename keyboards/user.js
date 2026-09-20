@@ -1,6 +1,5 @@
 const { Markup } = require('telegraf');
 
-/** Main reply keyboard — short labels, mobile-friendly */
 function mainMenu() {
   return Markup.keyboard([
     ['💼 Wallet', '⚡ Earn'],
@@ -17,6 +16,7 @@ function infoMenu() {
   return Markup.inlineKeyboard([
     [Markup.button.callback('📜 Terms of Use', 'info_terms'), Markup.button.callback('🔒 Privacy', 'info_privacy')],
     [Markup.button.callback('❓ How it works', 'info_how')],
+    [Markup.button.callback('« Main menu', 'go_home')],
   ]);
 }
 
@@ -30,21 +30,25 @@ function depositNetworks(addresses) {
 }
 
 function cancelInline() {
-  return Markup.inlineKeyboard([[Markup.button.callback('« Cancel', 'cancel')]]);
+  return Markup.inlineKeyboard([
+    [Markup.button.callback('« Cancel', 'cancel')],
+    [Markup.button.callback('« Main menu', 'go_home')],
+  ]);
 }
 
 function earnAdKeyboard(adId) {
   return Markup.inlineKeyboard([
     [Markup.button.callback('▶ Start verified view', `ad_start:${adId}`)],
     [Markup.button.callback('Skip', 'ad_skip')],
+    [Markup.button.callback('« Main menu', 'go_home')],
   ]);
 }
 
 function earnViewingKeyboard(adId, url) {
   return Markup.inlineKeyboard([
-    [Markup.button.url('Open ad link', url)],
+    [Markup.button.url('🔗 Open ad link', url)],
     [Markup.button.callback('✓ I completed the view', `ad_done:${adId}`)],
-    [Markup.button.callback('Skip', 'ad_skip')],
+    [Markup.button.callback('Skip', 'ad_skip'), Markup.button.callback('« Menu', 'go_home')],
   ]);
 }
 
@@ -58,8 +62,17 @@ function earnNextKeyboard() {
 function adTypeKeyboard() {
   return Markup.inlineKeyboard([
     [Markup.button.callback('🌐 Website', 'adtype:website'), Markup.button.callback('🤖 Bot', 'adtype:bot')],
-    [Markup.button.callback('📢 Channel', 'adtype:channel'), Markup.button.callback('📦 Other', 'adtype:other')],
+    [Markup.button.callback('📢 Channel', 'adtype:channel'), Markup.button.callback('🎵 Music', 'adtype:music')],
+    [Markup.button.callback('📦 Other', 'adtype:other')],
     [Markup.button.callback('« Cancel', 'cancel')],
+  ]);
+}
+
+function promoteMenu() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback('➕ New campaign', 'promote_new')],
+    [Markup.button.callback('📋 My campaigns', 'my_campaigns')],
+    [Markup.button.callback('« Main menu', 'go_home')],
   ]);
 }
 
@@ -76,5 +89,6 @@ module.exports = {
   earnViewingKeyboard,
   earnNextKeyboard,
   adTypeKeyboard,
+  promoteMenu,
   backHome,
 };
