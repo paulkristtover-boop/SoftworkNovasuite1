@@ -36,7 +36,7 @@ module.exports = {
   /** @username or -100id — bot must be admin in channel/group to verify */
   channelUsername: process.env.CHANNEL_USERNAME || '@SoftworkNovaSuite',
   groupUsername: process.env.GROUP_USERNAME || '@softworknovasuitecommunity',
-  requireMembership: process.env.REQUIRE_MEMBERSHIP !== 'false',
+  requireMembership: process.env.REQUIRE_MEMBERSHIP === 'true', // default off — bot is private-chat only
   defaultAdReward: num(process.env.DEFAULT_AD_REWARD, 0.01),
   maxAdsPerUser: int(process.env.MAX_ADS_PER_USER, 20),
   adViewDurationSec: int(process.env.AD_VIEW_DURATION_SEC, 15),

@@ -1,6 +1,7 @@
 /**
  * NovaSuite — Telegraf bot entry
- * Users + admin notifications. Shares Postgres with admin-cms.
+ * Private-chat only. Users + admin notifications. Shares Postgres with admin-cms.
+ * Does not interact in Telegram channels or groups.
  */
 require('dotenv').config();
 
@@ -10,6 +11,7 @@ const { pool } = require('./database');
 const { logger } = require('./utils/logger');
 const { rateLimit } = require('./middleware/rateLimit');
 const { banCheck } = require('./middleware/banCheck');
+const { privateOnly } = require('./middleware/privateOnly');
 const { requireMembership } = require('./middleware/requireMembership');
 const { registerUserHandlers } = require('./handlers/user');
 const { registerAdminHandlers } = require('./handlers/admin');
@@ -21,10 +23,13 @@ if (!config.botToken) {
 }
 
 const bot = new Telegraf(config.botToken);
+bot.use(privateOnly()); // never handle channel/group messages
 bot.use(session());
 bot.use(rateLimit);
 bot.use(banCheck);
-bot.use(requireMembership());
+if (config.requireMembership) {
+  bot.use(requireMembership());
+}
 bot.use(async (ctx, next) => {
   ctx.state = ctx.state || {};
   return next();
@@ -41,35 +46,32 @@ bot.catch((err, ctx) => {
 });
 
 async function setupBotProfile(telegram) {
-  // "What can this bot do?" — long description
   const description = [
     'NovaSuite is a paid-to-click (PTC) platform in USDT.',
     '',
-    'What this bot can do:',
+    'What this bot can do (private chat only):',
     '• Earn USDT by viewing verified ads',
     '• Promote your bot, website, or channel',
     '• Invite friends and earn referral bonuses',
     '• Deposit and withdraw USDT',
     '• Submit ideas and contact support',
     '',
-    'Join the community:',
-    'Channel: https://t.me/SoftworkNovaSuite',
-    'Group: https://t.me/softworknovasuitecommunity',
+    'Welcome starter credit for the first 30 users — use it to start earning or advertising.',
     '',
-    'Welcome bonus for the first 30 members after joining channel & group.',
+    'Community (news & chat — bot does not operate there):',
+    'https://t.me/SoftworkNovaSuite',
+    'https://t.me/softworknovasuitecommunity',
   ].join('\n');
 
-  // Short description (bot profile subtitle)
-  const shortDescription = 'Earn USDT · View ads · Promote · Referrals · Softwork NovaSuite';
+  const shortDescription = 'Earn & promote with USDT · Private chat bot · Softwork NovaSuite';
 
   await telegram.setMyDescription(description);
   await telegram.setMyShortDescription(shortDescription);
-
   await telegram.setMyCommands([
-    { command: 'start', description: 'Open NovaSuite & claim welcome bonus' },
+    { command: 'start', description: 'Open NovaSuite (private chat)' },
   ]);
 
-  logger.info('Bot profile (description + commands) updated');
+  logger.info('Bot profile updated');
 }
 
 async function start() {
@@ -99,7 +101,7 @@ async function start() {
     app.listen(config.port, () => logger.info(`Webhook :${config.port}${config.webhookPath}`));
   } else {
     await bot.launch();
-    logger.info('Bot started (polling)');
+    logger.info('Bot started (polling, private chats only)');
   }
 
   process.once('SIGINT', () => bot.stop('SIGINT'));
