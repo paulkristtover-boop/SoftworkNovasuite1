@@ -23,6 +23,7 @@ const sections = [
     items: [
       { href: '/users', label: 'Users', icon: '◎' },
       { href: '/ads', label: 'Campaigns', icon: '▣' },
+      { href: '/bonuses', label: 'Bonuses', icon: '🎁' },
     ],
   },
   {

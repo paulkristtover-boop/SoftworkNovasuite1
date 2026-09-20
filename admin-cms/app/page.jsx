@@ -89,6 +89,11 @@ export default async function DashboardPage() {
           <div className="value">{fraud.rows[0].c}</div>
           <div className="card-hint">Recent events</div>
         </Link>
+        <Link href="/bonuses" className="card card-accent-green">
+          <div className="label">Bonuses</div>
+          <div className="value">🎁</div>
+          <div className="card-hint">Welcome credit settings</div>
+        </Link>
       </div>
 
       {actionNeeded > 0 && (

@@ -56,11 +56,10 @@ async function setupBotProfile(telegram) {
     '• Deposit and withdraw USDT',
     '• Submit ideas and contact support',
     '',
-    'Welcome starter credit for the first 30 users — use it to start earning or advertising.',
+    'Join the official channel & group, then verify in the bot to unlock access and welcome credit (first 30).',
     '',
-    'Community (news & chat — bot does not operate there):',
-    'https://t.me/SoftworkNovaSuite',
-    'https://t.me/softworknovasuitecommunity',
+    'Channel: https://t.me/SoftworkNovaSuite',
+    'Group: https://t.me/softworknovasuitecommunity',
   ].join('\n');
 
   const shortDescription = 'Earn & promote with USDT · Private chat bot · Softwork NovaSuite';
