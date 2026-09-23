@@ -1,0 +1,2 @@
+LEGACY: Root bot.js and old folders are from the previous single-bot architecture.
+Active project: SoftworkNovaSuite — use user-bot/, admin-bot/, admin-cms/, and shared/.

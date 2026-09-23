@@ -1,14 +1,14 @@
-export function formatUsd(n, decimals = 4) {
-  const v = parseFloat(String(n ?? 0));
-  if (!Number.isFinite(v)) return '$0';
-  return `$${v.toFixed(decimals)}`;
+export function money(n) {
+  const v = Number(n) || 0;
+  return `${v.toFixed(2)} USDT`;
 }
 
-export function formatDate(d) {
+export function shortId(id) {
+  if (!id) return '—';
+  return String(id).slice(0, 8);
+}
+
+export function dt(d) {
   if (!d) return '—';
-  try {
-    return new Date(d).toLocaleString();
-  } catch {
-    return '—';
-  }
+  return new Date(d).toLocaleString();
 }

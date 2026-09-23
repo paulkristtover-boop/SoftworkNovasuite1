@@ -1,13 +1,8 @@
 import { NextResponse } from 'next/server';
-import { destroySession } from '@/lib/auth';
-
-export const runtime = 'nodejs';
+import { COOKIE } from '../../../../lib/auth';
 
 export async function POST() {
-  try {
-    await destroySession();
-  } catch (e) {
-    console.error('[cms logout]', e);
-  }
-  return NextResponse.json({ ok: true });
+  const res = NextResponse.json({ ok: true });
+  res.cookies.set(COOKIE, '', { httpOnly: true, path: '/', maxAge: 0 });
+  return res;
 }

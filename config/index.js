@@ -1,60 +1,47 @@
 require('dotenv').config();
 
-function num(v, d) {
-  const n = parseFloat(v);
-  return Number.isFinite(n) ? n : d;
-}
-function int(v, d) {
-  const n = parseInt(v, 10);
-  return Number.isFinite(n) ? n : d;
-}
-
-module.exports = {
-  botToken: process.env.BOT_TOKEN,
-  adminIds: (process.env.ADMIN_IDS || '')
+const parseAdminIds = (raw) => {
+  if (!raw) return [];
+  return String(raw)
     .split(',')
-    .map((s) => s.trim())
+    .map((id) => id.trim())
     .filter(Boolean)
-    .map(Number),
-  databaseUrl: process.env.DATABASE_URL,
-  adminCmsUrl: process.env.ADMIN_CMS_URL || '',
-  nodeEnv: process.env.NODE_ENV || 'development',
-  useWebhook: process.env.USE_WEBHOOK === 'true',
-  webhookUrl: process.env.WEBHOOK_URL || '',
-  webhookPath: process.env.WEBHOOK_PATH || '/webhook/telegram',
-  port: int(process.env.PORT || process.env.BOT_PORT, 3001),
-
-  currency: process.env.CURRENCY || 'USDT',
-  currencySymbol: process.env.CURRENCY_SYMBOL || '$',
-  minWithdraw: num(process.env.MIN_WITHDRAW, 5),
-  minDeposit: num(process.env.MIN_DEPOSIT, 1),
-  referralBonusPercent: num(process.env.REFERRAL_BONUS_PERCENT, 10),
-  welcomeBonusAmount: num(process.env.WELCOME_BONUS_AMOUNT, 0.5),
-  welcomeBonusLimit: int(process.env.WELCOME_BONUS_LIMIT, 30),
-  channelUrl: process.env.CHANNEL_URL || 'https://t.me/SoftworkNovaSuite',
-  groupUrl: process.env.GROUP_URL || 'https://t.me/softworknovasuitecommunity',
-  /** @username or -100id — bot must be admin in channel/group to verify */
-  channelUsername: process.env.CHANNEL_USERNAME || '@SoftworkNovaSuite',
-  groupUsername: process.env.GROUP_USERNAME || '@softworknovasuitecommunity',
-  requireMembership: process.env.REQUIRE_MEMBERSHIP !== 'false', // default ON — must join channel+group
-  defaultAdReward: num(process.env.DEFAULT_AD_REWARD, 0.01),
-  maxAdsPerUser: int(process.env.MAX_ADS_PER_USER, 20),
-  adViewDurationSec: int(process.env.AD_VIEW_DURATION_SEC, 15),
-  adViewCooldownSec: int(process.env.AD_VIEW_COOLDOWN_SEC, 60),
-  maxDailyAdViews: int(process.env.MAX_DAILY_AD_VIEWS, 50),
-  maxDailyEarn: num(process.env.MAX_DAILY_EARN, 10),
-
-  rateLimitWindowMs: int(process.env.RATE_LIMIT_WINDOW_MS, 3000),
-  rateLimitMax: int(process.env.RATE_LIMIT_MAX, 8),
-  sessionTtlHours: int(process.env.SESSION_TTL_HOURS, 24),
-
-  supportUsername: process.env.SUPPORT_USERNAME || '',
-  supportEmail: process.env.SUPPORT_EMAIL || '',
-  termsUrl: process.env.TERMS_URL || '',
-  privacyUrl: process.env.PRIVACY_URL || '',
-  platformName: process.env.PLATFORM_NAME || 'NovaSuite',
-  trustWalletAddress: process.env.TRUST_WALLET_ADDRESS || '',
-  defaultNetwork: process.env.DEFAULT_NETWORK || 'TRC20',
-  logLevel: process.env.LOG_LEVEL || 'info',
-  backupDir: process.env.BACKUP_DIR || './backups',
+    .map((id) => Number(id))
+    .filter((id) => !Number.isNaN(id));
 };
+
+const config = {
+  botToken: process.env.BOT_TOKEN,
+  adminIds: parseAdminIds(process.env.ADMIN_IDS),
+  webhook: {
+    domain: process.env.WEBHOOK_DOMAIN || '',
+    path: process.env.WEBHOOK_PATH || '/telegram-webhook',
+    port: Number(process.env.PORT) || 3000,
+    useWebhook: process.env.USE_WEBHOOK === 'true',
+  },
+  db: {
+    connectionString: process.env.DATABASE_URL,
+    host: process.env.DB_HOST || 'localhost',
+    port: Number(process.env.DB_PORT) || 5432,
+    database: process.env.DB_NAME || 'trustwallet_bot',
+    user: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASSWORD || '',
+  },
+  app: {
+    env: process.env.NODE_ENV || 'production',
+    currency: process.env.CURRENCY || 'USDT',
+    minDeposit: Number(process.env.MIN_DEPOSIT) || 5,
+    minWithdrawal: Number(process.env.MIN_WITHDRAWAL) || 10,
+    supportUsername: process.env.SUPPORT_USERNAME || '@Support',
+    supportEmail: process.env.SUPPORT_EMAIL || 'support@example.com',
+    termsUrl: process.env.TERMS_URL || '',
+    privacyUrl: process.env.PRIVACY_URL || '',
+    trustWalletLabel: process.env.TRUST_WALLET_LABEL || 'Main Trust Wallet',
+  },
+};
+
+if (!config.botToken) {
+  console.warn('[config] BOT_TOKEN is missing. Set it in .env');
+}
+
+module.exports = config;
