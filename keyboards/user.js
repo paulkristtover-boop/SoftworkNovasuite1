@@ -1,79 +1,94 @@
 const { Markup } = require('telegraf');
-const config = require('../config');
 
 function mainMenu() {
   return Markup.keyboard([
-    ['💰 Balance', '📥 Deposit'],
-    ['📤 Withdraw', '📜 History'],
-    ['💡 Submit Idea', '🆘 Support'],
-    ['📄 Terms', '🔒 Privacy'],
+    ['💼 Wallet', '⚡ Earn'],
+    ['📣 Promote', '👥 Refer'],
+    ['➕ Deposit', '➖ Withdraw'],
+    ['💡 Ideas', '💬 Support'],
+    ['ℹ️ Info'],
   ])
     .resize()
     .persistent();
 }
 
-function cancelKeyboard() {
-  return Markup.keyboard([['❌ Cancel']]).resize().oneTime();
+function infoMenu() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback('📜 Terms of Use', 'info_terms'), Markup.button.callback('🔒 Privacy', 'info_privacy')],
+    [Markup.button.callback('❓ How it works', 'info_how')],
+    [Markup.button.callback('« Main menu', 'go_home')],
+  ]);
 }
 
 function depositNetworks(addresses) {
-  const rows = addresses.map((a) => [
-    Markup.button.callback(`${a.network} · ${a.label || a.currency}`, `dep_net:${a.id}`),
-  ]);
-  rows.push([Markup.button.callback('❌ Cancel', 'dep_cancel')]);
+  const rows = addresses.map((a) => {
+    const label = a.label ? `${a.network} · ${a.label}` : `${a.network} (${a.currency || 'USDT'})`;
+    return [Markup.button.callback(label, `dep_net:${a.id}`)];
+  });
+  rows.push([Markup.button.callback('« Cancel', 'cancel')]);
   return Markup.inlineKeyboard(rows);
 }
 
-function confirmDeposit(amount, network) {
+function cancelInline() {
   return Markup.inlineKeyboard([
-    [
-      Markup.button.callback('✅ I sent it — Submit TX', 'dep_confirm'),
-      Markup.button.callback('❌ Cancel', 'dep_cancel'),
-    ],
+    [Markup.button.callback('« Cancel', 'cancel')],
+    [Markup.button.callback('« Main menu', 'go_home')],
   ]);
 }
 
-function withdrawNetworks() {
+function earnAdKeyboard(adId) {
   return Markup.inlineKeyboard([
-    [Markup.button.callback('TRC20 (Tron)', 'wd_net:TRC20')],
-    [Markup.button.callback('ERC20 (Ethereum)', 'wd_net:ERC20')],
-    [Markup.button.callback('BEP20 (BSC)', 'wd_net:BEP20')],
-    [Markup.button.callback('❌ Cancel', 'wd_cancel')],
+    [Markup.button.callback('▶ Start verified view', `ad_start:${adId}`)],
+    [Markup.button.callback('Skip', 'ad_skip')],
+    [Markup.button.callback('« Main menu', 'go_home')],
   ]);
 }
 
-function supportLinks() {
-  const buttons = [];
-  if (config.app.supportUsername) {
-    buttons.push([
-      Markup.button.url(
-        '💬 Chat Support',
-        `https://t.me/${config.app.supportUsername.replace('@', '')}`
-      ),
-    ]);
-  }
-  if (config.app.supportEmail) {
-    buttons.push([Markup.button.url('📧 Email', `mailto:${config.app.supportEmail}`)]);
-  }
-  buttons.push([Markup.button.callback('📝 Message in bot', 'support_msg')]);
-  return Markup.inlineKeyboard(buttons);
+function earnViewingKeyboard(adId, url) {
+  return Markup.inlineKeyboard([
+    [Markup.button.url('🔗 Open ad link', url)],
+    [Markup.button.callback('✓ I completed the view', `ad_done:${adId}`)],
+    [Markup.button.callback('Skip', 'ad_skip'), Markup.button.callback('« Menu', 'go_home')],
+  ]);
 }
 
-function termsKeyboard() {
-  const rows = [];
-  if (config.app.termsUrl) {
-    rows.push([Markup.button.url('📄 Full Terms', config.app.termsUrl)]);
-  }
-  rows.push([Markup.button.callback('✅ I Accept Terms', 'accept_terms')]);
-  return Markup.inlineKeyboard(rows);
+function earnNextKeyboard() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback('Next ad →', 'ad_next')],
+    [Markup.button.callback('« Main menu', 'go_home')],
+  ]);
+}
+
+function adTypeKeyboard() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback('🌐 Website', 'adtype:website'), Markup.button.callback('🤖 Bot', 'adtype:bot')],
+    [Markup.button.callback('📢 Channel', 'adtype:channel'), Markup.button.callback('🎵 Music', 'adtype:music')],
+    [Markup.button.callback('📦 Other', 'adtype:other')],
+    [Markup.button.callback('« Cancel', 'cancel')],
+  ]);
+}
+
+function promoteMenu() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback('➕ New campaign', 'promote_new')],
+    [Markup.button.callback('📋 My campaigns', 'my_campaigns')],
+    [Markup.button.callback('« Main menu', 'go_home')],
+  ]);
+}
+
+function backHome() {
+  return Markup.inlineKeyboard([[Markup.button.callback('« Main menu', 'go_home')]]);
 }
 
 module.exports = {
   mainMenu,
-  cancelKeyboard,
+  infoMenu,
   depositNetworks,
-  confirmDeposit,
-  withdrawNetworks,
-  supportLinks,
-  termsKeyboard,
+  cancelInline,
+  earnAdKeyboard,
+  earnViewingKeyboard,
+  earnNextKeyboard,
+  adTypeKeyboard,
+  promoteMenu,
+  backHome,
 };

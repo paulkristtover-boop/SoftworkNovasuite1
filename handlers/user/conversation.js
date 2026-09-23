@@ -90,8 +90,9 @@ async function handleConversation(ctx, next) {
 
     if (step === 'ad_reward') {
       const reward = parseFloat(text);
-      if (isNaN(reward) || reward < 0.001) {
-        return ctx.reply(errorMsg('Minimum reward is 0.001 USDT.'), cancelInline());
+      const minR = config.minAdReward || 0.005;
+      if (isNaN(reward) || reward < minR) {
+        return ctx.reply(errorMsg(`Minimum reward is ${minR} USDT.`), cancelInline());
       }
       ctx.session.ad.reward = reward;
       ctx.session.step = 'ad_budget';
@@ -106,6 +107,7 @@ async function handleConversation(ctx, next) {
       if (isNaN(budget) || budget < ctx.session.ad.reward) {
         return ctx.reply(errorMsg(`Budget must be at least ${ctx.session.ad.reward} USDT.`), cancelInline());
       }
+      const feePct = config.adPlatformFeePercent || 0;
       const ad = await createAd({
         ownerId: ctx.from.id,
         title: ctx.session.ad.title,
@@ -115,6 +117,7 @@ async function handleConversation(ctx, next) {
         budget,
       });
       ctx.session = {};
+      const estViews = Math.floor(parseFloat(ad.budget) / parseFloat(ad.reward));
       await ctx.replyWithMarkdown(
         success(
           'Campaign submitted',
@@ -122,10 +125,12 @@ async function handleConversation(ctx, next) {
             SEP,
             `ID: *#${ad.id}*`,
             `Title: ${ad.title}`,
-            `Reward: ${formatUsd(ad.reward)}`,
-            `Budget: ${formatUsd(ad.budget)}`,
+            `Reward: ${formatUsd(ad.reward)} / view`,
+            `Budget: ${formatUsd(ad.budget)} · ~${estViews} views`,
+            feePct ? `Platform fee: ${feePct}% (already deducted)` : null,
             '',
             '_Status: pending admin approval_',
+            tip('You will be notified when it goes live'),
           ])
         ),
         mainMenu()

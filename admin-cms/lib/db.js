@@ -1,11 +1,19 @@
-import pg from 'pg';
+import { Pool } from 'pg';
 
-const { Pool } = pg;
+function createPool() {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error('DATABASE_URL is not set');
+  return new Pool({
+    connectionString: url,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
+    max: 12,
+  });
+}
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-  max: 10,
-});
+const g = globalThis;
+export const pool = g.__novasuitePool || createPool();
+if (process.env.NODE_ENV !== 'production') g.__novasuitePool = pool;
 
-export default pool;
+export async function query(text, params) {
+  return pool.query(text, params);
+}

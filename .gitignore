@@ -1,11 +1,9 @@
 node_modules/
+admin-cms/node_modules/
+admin-cms/.next/
 .env
 .env.local
-.env.*.local
-admin-cms/.next/
-admin-cms/node_modules/
-admin-cms/.env.local
 *.log
 .DS_Store
-dist/
-.next/
+backups/
+.vercel

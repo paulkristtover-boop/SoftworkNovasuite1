@@ -2,6 +2,7 @@ import { AdminShell } from '@/components/AdminShell';
 import { query, pool } from '@/lib/db';
 import { formatUsd, formatDate } from '@/lib/format';
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { notifyUser } from '@/lib/telegram';
 
 export const dynamic = 'force-dynamic';
@@ -81,6 +82,7 @@ async function approveDeposit(formData) {
     }
   }
   revalidatePath('/deposits');
+  redirect('/deposits?ok=' + encodeURIComponent('Deposit approved & user notified'));
 }
 
 async function rejectDeposit(formData) {
@@ -107,6 +109,7 @@ async function rejectDeposit(formData) {
     }
   }
   revalidatePath('/deposits');
+  redirect('/deposits?ok=' + encodeURIComponent('Deposit rejected & user notified'));
 }
 
 export default async function DepositsPage({ searchParams }) {

@@ -1,8 +1,5 @@
 /** @type {import('next').NextConfig} */
-const nextConfig = {
+module.exports = {
   reactStrictMode: true,
-  // Ensure App Router pages are detected
-  experimental: {},
+  poweredByHeader: false,
 };
-
-module.exports = nextConfig;

@@ -6,17 +6,28 @@ const { randomToken, idempotencyKey } = require('../utils/helpers');
 const config = require('../config');
 
 async function createAd({ ownerId, title, description, url, type, reward, budget, maxViews, durationSec }) {
+  const minR = config.minAdReward || 0.005;
+  const maxR = config.maxAdReward || 1;
+  if (!(reward >= minR && reward <= maxR)) {
+    throw new Error(`Reward must be between ${minR} and ${maxR} USDT`);
+  }
+  if (!(budget >= reward)) throw new Error('Budget must cover at least one view');
+  const feePct = config.adPlatformFeePercent || 0;
+  const fee = Math.round(budget * feePct) / 100 / 100 * 100; // keep simple
+  const feeAmount = Math.round(budget * (feePct / 100) * 1e6) / 1e6;
+  const totalDebit = budget + feeAmount;
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const u = await client.query('SELECT balance FROM users WHERE telegram_id=$1 FOR UPDATE', [ownerId]);
-    if (!u.rows[0] || parseFloat(u.rows[0].balance) < budget) throw new Error('Insufficient balance for ad budget');
+    if (!u.rows[0] || parseFloat(u.rows[0].balance) < totalDebit) throw new Error(`Insufficient balance (need ${totalDebit} USDT incl. ${feePct}% fee)`);
     const count = await client.query(
       `SELECT COUNT(*) FROM ads WHERE owner_id=$1 AND status IN ('pending','active','paused')`,
       [ownerId]
     );
     if (parseInt(count.rows[0].count, 10) >= config.maxAdsPerUser) throw new Error('Too many active ads');
-    const newBal = parseFloat(u.rows[0].balance) - budget;
+    const newBal = parseFloat(u.rows[0].balance) - totalDebit;
     await client.query('UPDATE users SET balance=$1, updated_at=NOW() WHERE telegram_id=$2', [newBal, ownerId]);
     const res = await client.query(
       `INSERT INTO ads (owner_id, title, description, url, type, reward, budget, max_views, duration_sec, status)
@@ -36,10 +47,24 @@ async function createAd({ ownerId, title, description, url, type, reward, budget
     await client.query(
       `INSERT INTO transactions (user_id, type, amount, balance_after, reference_id, reference_type, note, idempotency_key)
        VALUES ($1,'ad_spend',$2,$3,$4,'ad','Ad budget reserved',$5)`,
-      [ownerId, -budget, newBal, res.rows[0].id, idempotencyKey('ad_spend', res.rows[0].id)]
+      [ownerId, -totalDebit, newBal, res.rows[0].id, idempotencyKey('ad_spend', res.rows[0].id)]
     );
+    if (feeAmount > 0) {
+      const tb = await client.query(`SELECT value FROM settings WHERE key='treasury_balance'`);
+      const tbal = (parseFloat(tb.rows[0]?.value || '0') || 0) + feeAmount;
+      await client.query(
+        `INSERT INTO settings (key, value, updated_at) VALUES ('treasury_balance',$1,NOW())
+         ON CONFLICT (key) DO UPDATE SET value=$1, updated_at=NOW()`,
+        [String(tbal)]
+      );
+      await client.query(
+        `INSERT INTO treasury_logs (type, amount, balance_after, note)
+         VALUES ('in',$1,$2,$3)`,
+        [feeAmount, tbal, `Ad platform fee #${res.rows[0].id}`]
+      );
+    }
     await client.query('COMMIT');
-    return res.rows[0];
+    return { ...res.rows[0], platformFee: feeAmount, totalDebit };
   } catch (e) {
     await client.query('ROLLBACK');
     throw e;

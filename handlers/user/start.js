@@ -1,6 +1,6 @@
 const { findOrCreateUser, getUser } = require('../../services/userService');
 const { getSetting } = require('../../services/settingsService');
-const { maybeGrantWelcomeBonus, welcomeBonusStatus } = require('../../services/welcomeBonus');
+const { maybeGrantWelcomeBonus, welcomeBonusStatus, hasWelcomeBonus } = require('../../services/welcomeBonus');
 const { checkCommunityMembership, communityLinks } = require('../../services/membershipService');
 const { joinKeyboard } = require('../../middleware/requireMembership');
 const { mainMenu } = require('../../keyboards/user');
@@ -21,22 +21,32 @@ module.exports = function startHandler(bot) {
     const membership = await checkCommunityMembership(ctx.telegram, ctx.from.id);
 
     let bonusLine = null;
+    let justGranted = false;
+
     if (membership.ok) {
-      const bonus = await maybeGrantWelcomeBonus(user.telegram_id);
+      const bonus = await maybeGrantWelcomeBonus(user.telegram_id, {
+        notifyAdmins: true,
+        telegram: ctx.telegram,
+      });
       if (bonus.granted) {
+        justGranted = true;
         bonusLine = [
           `🎁 *Welcome starter credit:* +${formatUsd(bonus.amount)}`,
           `_First ${bonus.limit} members · ${bonus.remaining} left_`,
           `_Use for *Earn* or *Promote*_`,
         ].join('\n');
-      } else if (bonus.reason === 'sold_out' && isNew) {
-        bonusLine = '_Welcome starter pool is full (first 30 claimed)._';
+      } else if (bonus.reason === 'already') {
+        bonusLine = `✅ Welcome credit already received (${formatUsd(bonus.amount || status.amount)})`;
+      } else if (bonus.reason === 'sold_out') {
+        bonusLine = '_Welcome starter pool is full._';
+      } else if (bonus.reason && bonus.reason !== 'disabled') {
+        bonusLine = `_Bonus note: ${bonus.reason}_`;
       }
     } else if (status.active) {
       bonusLine = [
         `🎁 *Welcome starter credit* ${formatUsd(status.amount)}`,
-        `_First ${status.limit} members · ${status.remaining} spots left_`,
-        `_Join channel & group, then verify to claim_`,
+        `_First ${status.limit} · ${status.remaining} spots left_`,
+        `_Join channel & group, then *Verify membership*_`,
       ].join('\n');
     }
 
@@ -84,6 +94,11 @@ module.exports = function startHandler(bot) {
 
     if (membership.ok) {
       await ctx.replyWithMarkdown(welcome, mainMenu());
+      if (justGranted) {
+        await ctx.replyWithMarkdown(
+          success('Bonus credited', `+${formatUsd((await hasWelcomeBonus(user.telegram_id))?.amount || status.amount)} is in your Wallet.`)
+        );
+      }
     } else {
       await ctx.replyWithMarkdown(welcome, joinKeyboard());
     }
@@ -97,7 +112,6 @@ module.exports = function startHandler(bot) {
       const missing = [];
       if (!result.channel.ok) missing.push('channel');
       if (!result.group.ok) missing.push('group');
-
       await ctx.replyWithMarkdown(
         block([
           '❌ *Not verified yet*',
@@ -106,17 +120,31 @@ module.exports = function startHandler(bot) {
           result.group.ok ? '✅ Group' : '❌ Group — join first',
           '',
           `Still missing: *${missing.join(' & ')}*`,
-          '',
-          'Open the links, join, then tap Verify again.',
-          tip('Add the bot as admin in channel & group so checks work'),
+          tip('Bot must be admin in channel & group for checks to work'),
         ]),
         joinKeyboard()
       );
       return;
     }
 
-    const bonus = await maybeGrantWelcomeBonus(ctx.from.id);
+    const bonus = await maybeGrantWelcomeBonus(ctx.from.id, {
+      notifyAdmins: true,
+      telegram: ctx.telegram,
+    });
     const user = await getUser(ctx.from.id);
+
+    let bonusMsg = null;
+    if (bonus.granted) {
+      bonusMsg = `🎁 Welcome starter credit: *+${formatUsd(bonus.amount)}*\n_First ${bonus.limit} · ${bonus.remaining} left_`;
+    } else if (bonus.reason === 'already') {
+      bonusMsg = `✅ Already credited: *${formatUsd(bonus.amount || 0)}*`;
+    } else if (bonus.reason === 'sold_out') {
+      bonusMsg = '_Welcome pool is full._';
+    } else if (bonus.reason === 'disabled') {
+      bonusMsg = '_Welcome bonus is currently off._';
+    } else {
+      bonusMsg = bonus.reason ? `_${bonus.reason}_` : null;
+    }
 
     await ctx.replyWithMarkdown(
       success(
@@ -125,13 +153,7 @@ module.exports = function startHandler(bot) {
           SEP,
           'You can use NovaSuite fully now.',
           '',
-          bonus.granted
-            ? `🎁 Welcome starter credit: *+${formatUsd(bonus.amount)}*\n_First ${bonus.limit} · ${bonus.remaining} left · use for Earn or Promote_`
-            : bonus.reason === 'sold_out'
-              ? '_Welcome pool is full._'
-              : bonus.reason === 'already'
-                ? '_Welcome credit already claimed._'
-                : null,
+          bonusMsg,
           '',
           `_Balance: ${formatUsd(user?.balance || 0)}_`,
         ])
@@ -150,6 +172,6 @@ module.exports = function startHandler(bot) {
         joinKeyboard()
       );
     }
-    await ctx.reply('Main menu', mainMenu());
+    await ctx.reply('✅ Main menu', mainMenu());
   });
 };

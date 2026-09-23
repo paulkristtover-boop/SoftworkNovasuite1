@@ -1,18 +1,20 @@
-const winston = require('winston');
 const config = require('../config');
+const levels = { error: 0, warn: 1, info: 2, debug: 3 };
+const cur = levels[config.logLevel] ?? 2;
 
-const logger = winston.createLogger({
-  level: config.app.env === 'development' ? 'debug' : 'info',
-  format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format.errors({ stack: true }),
-    winston.format.printf(({ timestamp, level, message, stack }) => {
-      return stack
-        ? `${timestamp} [${level}] ${message}\n${stack}`
-        : `${timestamp} [${level}] ${message}`;
-    })
-  ),
-  transports: [new winston.transports.Console()],
-});
+function log(level, ...args) {
+  if ((levels[level] ?? 2) <= cur) {
+    const ts = new Date().toISOString();
+    const fn = level === 'error' ? console.error : console.log;
+    fn(`[${ts}] [${level.toUpperCase()}]`, ...args);
+  }
+}
 
-module.exports = logger;
+module.exports = {
+  logger: {
+    error: (...a) => log('error', ...a),
+    warn: (...a) => log('warn', ...a),
+    info: (...a) => log('info', ...a),
+    debug: (...a) => log('debug', ...a),
+  },
+};

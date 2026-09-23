@@ -2,6 +2,7 @@ import { AdminShell } from '@/components/AdminShell';
 import { query } from '@/lib/db';
 import { formatUsd, formatDate } from '@/lib/format';
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { notifyUser } from '@/lib/telegram';
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +14,7 @@ async function banUser(formData) {
   await query("INSERT INTO audit_logs (actor_type,action,target_type,target_id,details) VALUES ('admin','ban_user','user',$1,$2)", [String(id), JSON.stringify({ reason })]);
   await notifyUser(id, `🚫 *Account restricted*\n\nReason: ${reason}\n\nContact support if this is a mistake.`);
   revalidatePath('/users');
+  redirect('/users?ok=' + encodeURIComponent('User banned'));
 }
 async function unbanUser(formData) {
   'use server';
@@ -21,13 +23,16 @@ async function unbanUser(formData) {
   await query("INSERT INTO audit_logs (actor_type,action,target_type,target_id) VALUES ('admin','unban_user','user',$1)", [String(id)]);
   await notifyUser(id, `✅ *Account restored*\n\nYou can use NovaSuite again.`);
   revalidatePath('/users');
+  redirect('/users?ok=' + encodeURIComponent('User unbanned'));
 }
 
 export default async function Page({ searchParams }) {
   const q = searchParams?.q || '';
   const res = q
-    ? await query("SELECT * FROM users WHERE telegram_id::text LIKE $1 OR username ILIKE $1 ORDER BY created_at DESC LIMIT 80", ['%' + q + '%'])
-    : await query('SELECT * FROM users ORDER BY created_at DESC LIMIT 80');
+    ? await query(`SELECT u.*, EXISTS(SELECT 1 FROM transactions t WHERE t.user_id=u.telegram_id AND t.type='welcome_bonus') AS got_welcome
+        FROM users u WHERE u.telegram_id::text LIKE $1 OR u.username ILIKE $1 ORDER BY u.created_at DESC LIMIT 80`, ['%' + q + '%'])
+    : await query(`SELECT u.*, EXISTS(SELECT 1 FROM transactions t WHERE t.user_id=u.telegram_id AND t.type='welcome_bonus') AS got_welcome
+        FROM users u ORDER BY u.created_at DESC LIMIT 80`);
   return (
     <AdminShell title="Users">
       <form method="get" style={{ marginBottom: 16 }}>
@@ -36,7 +41,7 @@ export default async function Page({ searchParams }) {
       <div className="table-wrap">
         <table>
           <thead>
-            <tr><th>ID</th><th>User</th><th>Balance</th><th>Earned</th><th>Fraud</th><th>Status</th><th>Joined</th><th></th></tr>
+            <tr><th>ID</th><th>User</th><th>Balance</th><th>Welcome</th><th>Fraud</th><th>Status</th><th>Joined</th><th></th></tr>
           </thead>
           <tbody>
             {res.rows.map((u) => (
@@ -44,7 +49,7 @@ export default async function Page({ searchParams }) {
                 <td className="mono">{u.telegram_id}</td>
                 <td>@{u.username || '—'}<br/><span className="muted">{u.first_name || ''}</span></td>
                 <td>{formatUsd(u.balance)}</td>
-                <td>{formatUsd(u.total_earned, 2)}</td>
+                <td>{u.got_welcome ? <span className="badge badge-active">Yes</span> : <span className="badge badge-pending">No</span>}</td>
                 <td>{u.fraud_score || 0}</td>
                 <td>{u.is_banned ? <span className="badge badge-banned">Banned</span> : <span className="badge badge-active">Active</span>}</td>
                 <td>{formatDate(u.created_at)}</td>

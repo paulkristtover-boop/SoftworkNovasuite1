@@ -2,6 +2,7 @@ import { AdminShell } from '@/components/AdminShell';
 import { query, pool } from '@/lib/db';
 import { formatUsd, formatDate } from '@/lib/format';
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { notifyUser, checkMembership } from '@/lib/telegram';
 
 export const dynamic = 'force-dynamic';
@@ -27,6 +28,7 @@ async function saveBonusSettings(formData) {
     [JSON.stringify(Object.fromEntries(pairs))]
   );
   revalidatePath('/bonuses');
+  redirect('/bonuses?ok=' + encodeURIComponent('Bonus settings saved'));
 }
 
 async function grantManual(formData) {
@@ -75,6 +77,7 @@ async function grantManual(formData) {
     `🎁 *Welcome starter credit*\n\n+$${amount.toFixed(4)} USDT has been added to your wallet.\n\n_Use it for Earn or Promote._\n\nOpen the bot → *Wallet* to check your balance.`
   );
   revalidatePath('/bonuses');
+  redirect('/bonuses?ok=' + encodeURIComponent('User credited and notified'));
 }
 
 /**
@@ -181,6 +184,7 @@ async function backfillWelcome(formData) {
   );
 
   revalidatePath('/bonuses');
+  redirect('/bonuses?ok=' + encodeURIComponent(`Backfill done: ${granted} credited, ${skipped} skipped`));
 }
 
 async function notifyEligible(formData) {
@@ -233,6 +237,7 @@ async function notifyEligible(formData) {
     [JSON.stringify({ sent, candidates: users.rows.length })]
   );
   revalidatePath('/bonuses');
+  redirect('/bonuses?ok=' + encodeURIComponent(`Claim instructions sent to ${sent} users`));
 }
 
 export default async function BonusesPage() {

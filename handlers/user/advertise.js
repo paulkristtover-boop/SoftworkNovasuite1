@@ -17,7 +17,7 @@ module.exports = function advertiseHandler(bot) {
         '',
         'Create a campaign or manage the ones you already run.',
         '',
-        tip('Budget is reserved from your balance on submit'),
+        tip(`Budget + ${require('../../config').adPlatformFeePercent || 0}% fee reserved on submit · min reward ${require('../../config').minAdReward || 0.005} USDT`),
       ]),
       promoteMenu()
     );

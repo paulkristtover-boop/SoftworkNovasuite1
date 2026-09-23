@@ -2,6 +2,7 @@ import { AdminShell } from '@/components/AdminShell';
 import { query } from '@/lib/db';
 import { formatUsd, formatDate } from '@/lib/format';
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { notifyUser, broadcastMessage } from '@/lib/telegram';
 
 export const dynamic = 'force-dynamic';
@@ -89,6 +90,8 @@ async function setAdStatus(formData) {
     );
   }
   revalidatePath('/ads');
+  const label = status === 'active' ? 'Campaign activated — earners notified' : status === 'rejected' ? 'Campaign rejected' : 'Campaign updated';
+  redirect('/ads?ok=' + encodeURIComponent(label));
 }
 
 export default async function AdsPage({ searchParams }) {
