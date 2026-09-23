@@ -1,8 +1,17 @@
+providers = ["node"]
+
+[variables]
+NODE_ENV = "production"
+NPM_CONFIG_PRODUCTION = "false"
+
 [phases.setup]
 nixPkgs = ["nodejs_20", "npm-9_x"]
 
 [phases.install]
 cmds = ["npm install --omit=dev --no-audit --no-fund"]
+
+[phases.build]
+cmds = ["echo 'no build step for telegraf bot'"]
 
 [start]
 cmd = "npm start"

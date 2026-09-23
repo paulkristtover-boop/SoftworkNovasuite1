@@ -11,8 +11,7 @@ export default function Toast({ message, type = 'success', onClose }) {
 
   if (!message) return null;
   return (
-    <div className={`toast toast-${type}`} role="status">
-      {type === 'success' ? '✅ ' : '⚠️ '}
+    <div className={`toast toast-${type === 'error' ? 'error' : 'success'}`} role="status">
       {message}
     </div>
   );

@@ -184,7 +184,7 @@ async function handleTextState(ctx) {
       await session.clearSession(ctx.from.id);
 
       await ctx.reply(
-        `✅ <b>Deposit submitted</b>\n\n` +
+        `✅ <b>Success — deposit submitted</b>\n\n` +
           `Amount: <b>${money(dep.amount)}</b>\n` +
           `Network: ${dep.network}\n` +
           `TX: <code>${escapeHtml(txHash)}</code>\n` +
@@ -240,7 +240,7 @@ async function handleTextState(ctx) {
       ctx.state.user = await users.getByTelegramId(ctx.from.id);
 
       await ctx.reply(
-        `✅ <b>Withdrawal requested</b>\n\n` +
+        `✅ <b>Success — withdrawal requested</b>\n\n` +
           `Amount: <b>${money(w.amount)}</b>\n` +
           `Network: ${w.network}\n` +
           `To: <code>${escapeHtml(toAddress)}</code>\n` +
@@ -478,7 +478,7 @@ No ads available right now. Check back later, or deposit & advertise your own pr
 ` +
     (c.description ? `${escapeHtml(c.description.slice(0, 200))}
 ` : '') +
-    `Reward: <b>${money(c.reward_per_view)}</b> · Budget left: ${money(left)}
+    `Reward: <b>${money(c.reward_per_view)}</b> · Campaign budget left: ${money(Number(c.budget_total) - Number(c.budget_spent))} · Budget left: ${money(left)}
 
 ` +
     `1. 🔗 Open link
@@ -500,7 +500,7 @@ async function onAdClaim(ctx) {
       `✅ <b>Success! Reward claimed</b>\n\nEarned: <b>+${money(result.reward)}</b>\nBalance: <b>${money(ctx.state.user.balance)}</b>`,
       { parse_mode: 'HTML' }
     );
-    await ctx.reply('Want another ad?', userKb.mainMenu());
+    await ctx.reply('✅ Success. Tap 💵 Earn for the next ad.', userKb.mainMenu());
   } catch (err) {
     const msg = err.message || 'Could not claim reward.';
     try {
@@ -521,14 +521,20 @@ async function onAdSkip(ctx) {
 
 async function advertiseStart(ctx) {
   const settings = await ads.getSettings();
+  const def = settings.default_reward;
+  const viewsForMin = Math.floor(Number(settings.min_campaign_budget) / Number(def || 0.001));
   await ctx.reply(
-    `📢 <b>Advertise on SoftworkNovaSuite</b>\n\n` +
-      `Promote your <b>bot, website, channel, group</b> or other project.\n\n` +
-      `• Budget is taken from your balance\n` +
-      `• Min budget: <b>${money(settings.min_campaign_budget)}</b>\n` +
-      `• Reward per view: ${settings.min_reward_per_view} – ${settings.max_reward_per_view} USDT\n` +
-      `• Campaigns need admin approval before going live\n\n` +
-      `Select ad type:`,
+    `📢 <b>Advertise on SoftworkNovaSuite</b>
+
+Promote your <b>bot, website, channel or group</b>.
+
+• Budget locked from your balance (refunded if rejected)
+• Min budget: <b>${money(settings.min_campaign_budget)}</b>
+• Pay viewers: <b>${settings.min_reward_per_view}–${settings.max_reward_per_view}</b> USDT/view
+• Default ~<b>${money(def)}</b>/view → about <b>${viewsForMin}+</b> views at min budget
+• Admin approves before the ad goes live
+
+Select ad type:`,
     { parse_mode: 'HTML', ...userKb.adTypeKeyboard() }
   );
 }

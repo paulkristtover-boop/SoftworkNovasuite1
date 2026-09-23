@@ -1,0 +1,8 @@
+node_modules
+admin-cms/node_modules
+admin-cms/.next
+.git
+.env
+.env.*
+*.md
+LEGACY_NOTE.txt

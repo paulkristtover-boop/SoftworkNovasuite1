@@ -12,7 +12,9 @@ async function getDashboard() {
       (SELECT COUNT(*)::int FROM users) AS users_count,
       (SELECT COALESCE(SUM(balance),0) FROM users) AS user_balances,
       (SELECT COUNT(*)::int FROM ideas WHERE status = 'new') AS new_ideas,
-      (SELECT COUNT(*)::int FROM ad_campaigns WHERE status = 'pending') AS pending_campaigns
+      (SELECT COUNT(*)::int FROM ad_campaigns WHERE status = 'pending') AS pending_campaigns,
+      (SELECT COUNT(*)::int FROM ad_campaigns WHERE status = 'active') AS active_campaigns,
+      (SELECT COUNT(*)::int FROM referral_rewards) AS referral_rewards_count
   `);
   return rows[0];
 }

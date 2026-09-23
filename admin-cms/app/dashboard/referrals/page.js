@@ -27,20 +27,20 @@ export default function ReferralsPage() {
     <>
       <h1 className="page-title">Referrals</h1>
       <p className="page-sub">
-        Signup/welcome bonuses and earn-share payouts. Confirms whether joiners and inviters were credited.
+        Every credited bonus appears here — signup (inviter), welcome (joiner), and earn-share.
       </p>
       <div className="table-wrap">
         {loading ? (
           <div className="empty">Loading…</div>
         ) : !list.length ? (
-          <div className="empty">No referral rewards yet</div>
+          <div className="empty">No referral rewards yet. When someone joins with a link, it shows up here.</div>
         ) : (
           <table>
             <thead>
               <tr>
                 <th>When</th>
                 <th>Type</th>
-                <th>Referrer</th>
+                <th>Inviter</th>
                 <th>Joiner</th>
                 <th>Amount</th>
               </tr>
@@ -50,15 +50,13 @@ export default function ReferralsPage() {
                 <tr key={r.id}>
                   <td className="muted">{dt(r.created_at)}</td>
                   <td>
-                    <span className={`badge badge-${r.reward_type === 'welcome' ? 'new' : 'approved'}`}>
-                      {r.reward_type}
-                    </span>
+                    <span className={`badge badge-${r.reward_type || 'new'}`}>{r.reward_type}</span>
                   </td>
                   <td>
-                    {r.referrer_username ? `@${r.referrer_username}` : r.referrer_tg}
+                    {r.referrer_username ? `@${r.referrer_username}` : r.referrer_tg || r.referrer_id}
                   </td>
                   <td>
-                    {r.referred_name || ''} {r.referred_username ? `@${r.referred_username}` : r.referred_tg}
+                    {r.referred_username ? `@${r.referred_username}` : r.referred_tg || r.referred_id}
                   </td>
                   <td><strong>{money(r.amount)}</strong></td>
                 </tr>
