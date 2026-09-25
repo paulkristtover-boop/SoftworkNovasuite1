@@ -2,11 +2,11 @@ const { findOrCreateUser, getUser } = require('../../services/userService');
 const { getSetting } = require('../../services/settingsService');
 const { maybeGrantWelcomeBonus, welcomeBonusStatus, hasWelcomeBonus } = require('../../services/welcomeBonus');
 const { checkCommunityMembership, communityLinks } = require('../../services/membershipService');
-const { joinKeyboard } = require('../../middleware/requireMembership');
-const { mainMenu } = require('../../keyboards/user');
+const { mainMenu, joinKeyboard } = require('../../keyboards/user');
 const { adminMenu } = require('../../keyboards/admin');
 const { isAdmin, formatUsd } = require('../../utils/helpers');
 const { block, SEP, brandName, tip, success } = require('../../utils/ui');
+const { pool } = require('../../database');
 const config = require('../../config');
 
 module.exports = function startHandler(bot) {
@@ -18,36 +18,35 @@ module.exports = function startHandler(bot) {
     const custom = await getSetting('welcome_message', '');
     const { channelUrl, groupUrl } = communityLinks();
     const status = await welcomeBonusStatus();
-    const membership = await checkCommunityMembership(ctx.telegram, ctx.from.id);
 
+    // Welcome bonus on join (first N) — not gated on membership
     let bonusLine = null;
     let justGranted = false;
-
-    if (membership.ok) {
-      const bonus = await maybeGrantWelcomeBonus(user.telegram_id, {
-        notifyAdmins: true,
-        telegram: ctx.telegram,
-      });
-      if (bonus.granted) {
-        justGranted = true;
-        bonusLine = [
-          `🎁 *Welcome starter credit:* +${formatUsd(bonus.amount)}`,
-          `_First ${bonus.limit} members · ${bonus.remaining} left_`,
-          `_Use for *Earn* or *Promote*_`,
-        ].join('\n');
-      } else if (bonus.reason === 'already') {
-        bonusLine = `✅ Welcome credit already received (${formatUsd(bonus.amount || status.amount)})`;
-      } else if (bonus.reason === 'sold_out') {
-        bonusLine = '_Welcome starter pool is full._';
-      } else if (bonus.reason && bonus.reason !== 'disabled') {
-        bonusLine = `_Bonus note: ${bonus.reason}_`;
-      }
-    } else if (status.active) {
+    const bonus = await maybeGrantWelcomeBonus(user.telegram_id, {
+      notifyAdmins: true,
+      telegram: ctx.telegram,
+    });
+    if (bonus.granted) {
+      justGranted = true;
       bonusLine = [
-        `🎁 *Welcome starter credit* ${formatUsd(status.amount)}`,
-        `_First ${status.limit} · ${status.remaining} spots left_`,
-        `_Join channel & group, then *Verify membership*_`,
+        `🎁 *Welcome bonus:* +${formatUsd(bonus.amount)}`,
+        `_Automatic credit · first ${bonus.limit} members · ${bonus.remaining} left_`,
+        `_Use for Earn or Promote_`,
       ].join('\n');
+    } else if (bonus.reason === 'already') {
+      bonusLine = `✅ Welcome bonus already in your wallet (${formatUsd(bonus.amount || status.amount)})`;
+    } else if (bonus.reason === 'sold_out' && isNew) {
+      bonusLine = '_Welcome bonus pool is full._';
+    }
+
+    let membership = { ok: true, channel: { ok: true }, group: { ok: true } };
+    if (config.requireMembership) {
+      membership = await checkCommunityMembership(ctx.telegram, ctx.from.id);
+      if (membership.ok) {
+        await pool
+          .query(`UPDATE users SET membership_verified=TRUE WHERE telegram_id=$1`, [user.telegram_id])
+          .catch(() => {});
+      }
     }
 
     const fresh = await getUser(user.telegram_id);
@@ -60,20 +59,22 @@ module.exports = function startHandler(bot) {
       custom ||
         [
           '• *Earn* — view verified ads & get paid',
-          '• *Promote* — advertise bots, sites & channels',
+          '• *Promote* — advertise & manage campaigns',
           '• *Refer* — invite friends and earn a share',
-          '• *Wallet* — deposit & withdraw in USDT',
+          '• *Wallet* — deposit & withdraw',
         ].join('\n'),
       bonusLine ? '' : null,
       bonusLine,
       '',
-      '*Community (required)*',
+      '*Community*',
       `📢 ${channelUrl}`,
       `💬 ${groupUrl}`,
       '',
-      membership.ok
-        ? '✅ Membership verified — you can use the bot'
-        : '⚠️ Join *channel* and *group*, then tap *Verify membership*',
+      config.requireMembership
+        ? membership.ok
+          ? '✅ Membership verified'
+          : '📢 Please join channel & group (we’ll remind you) · then *Verify*'
+        : null,
       '',
       `_Balance: ${formatUsd(bal)}_`,
       tip('Bot works in private chat only'),
@@ -85,76 +86,73 @@ module.exports = function startHandler(bot) {
           welcome,
           '',
           '🔐 *Admin notifications mode*',
-          config.adminCmsUrl ? `CMS: ${config.adminCmsUrl}` : 'Configure ADMIN_CMS_URL.',
+          config.adminCmsUrl ? `CMS: ${config.adminCmsUrl}` : '',
         ]),
         adminMenu()
       );
       return;
     }
 
-    if (membership.ok) {
+    if (!config.requireMembership || membership.ok) {
       await ctx.replyWithMarkdown(welcome, mainMenu());
       if (justGranted) {
         await ctx.replyWithMarkdown(
-          success('Bonus credited', `+${formatUsd((await hasWelcomeBonus(user.telegram_id))?.amount || status.amount)} is in your Wallet.`)
+          success('Welcome bonus added', `+${formatUsd(bonus.amount)} is in your Wallet now.`)
         );
       }
     } else {
       await ctx.replyWithMarkdown(welcome, joinKeyboard());
+      if (justGranted) {
+        await ctx.replyWithMarkdown(
+          success(
+            'Welcome bonus added',
+            `+${formatUsd(bonus.amount)} is already in your balance.\nJoin the community to unlock Earn & more.`
+          )
+        );
+      }
     }
   });
 
   bot.action('verify_join', async (ctx) => {
-    await ctx.answerCbQuery('Checking membership…');
+    await ctx.answerCbQuery('Checking…');
     const result = await checkCommunityMembership(ctx.telegram, ctx.from.id);
-
     if (!result.ok) {
-      const missing = [];
-      if (!result.channel.ok) missing.push('channel');
-      if (!result.group.ok) missing.push('group');
       await ctx.replyWithMarkdown(
         block([
-          '❌ *Not verified yet*',
+          '❌ *Not fully joined yet*',
           SEP,
-          result.channel.ok ? '✅ Channel' : '❌ Channel — join first',
-          result.group.ok ? '✅ Group' : '❌ Group — join first',
+          result.channel.ok ? '✅ Channel' : '❌ Channel',
+          result.group.ok ? '✅ Group' : '❌ Group',
           '',
-          `Still missing: *${missing.join(' & ')}*`,
-          tip('Bot must be admin in channel & group for checks to work'),
+          tip('Join both, then Verify again — we also send reminders'),
         ]),
         joinKeyboard()
       );
       return;
     }
+    await pool
+      .query(`UPDATE users SET membership_verified=TRUE, join_reminded_at=NULL WHERE telegram_id=$1`, [
+        ctx.from.id,
+      ])
+      .catch(() => {});
 
+    // Ensure bonus if they somehow missed it
     const bonus = await maybeGrantWelcomeBonus(ctx.from.id, {
       notifyAdmins: true,
       telegram: ctx.telegram,
     });
     const user = await getUser(ctx.from.id);
-
-    let bonusMsg = null;
-    if (bonus.granted) {
-      bonusMsg = `🎁 Welcome starter credit: *+${formatUsd(bonus.amount)}*\n_First ${bonus.limit} · ${bonus.remaining} left_`;
-    } else if (bonus.reason === 'already') {
-      bonusMsg = `✅ Already credited: *${formatUsd(bonus.amount || 0)}*`;
-    } else if (bonus.reason === 'sold_out') {
-      bonusMsg = '_Welcome pool is full._';
-    } else if (bonus.reason === 'disabled') {
-      bonusMsg = '_Welcome bonus is currently off._';
-    } else {
-      bonusMsg = bonus.reason ? `_${bonus.reason}_` : null;
-    }
-
     await ctx.replyWithMarkdown(
       success(
-        'Membership verified',
+        'You’re in',
         block([
           SEP,
-          'You can use NovaSuite fully now.',
-          '',
-          bonusMsg,
-          '',
+          'Full access unlocked.',
+          bonus.granted
+            ? `🎁 Bonus: +${formatUsd(bonus.amount)}`
+            : bonus.reason === 'already'
+              ? `✅ Bonus already credited`
+              : null,
           `_Balance: ${formatUsd(user?.balance || 0)}_`,
         ])
       ),
@@ -165,12 +163,14 @@ module.exports = function startHandler(bot) {
   bot.action('go_home', async (ctx) => {
     await ctx.answerCbQuery();
     ctx.session = {};
-    const result = await checkCommunityMembership(ctx.telegram, ctx.from.id);
-    if (!result.ok && config.requireMembership && !isAdmin(ctx.from.id)) {
-      return ctx.replyWithMarkdown(
-        block(['🔒 Join channel & group first', tip('Then verify membership')]),
-        joinKeyboard()
-      );
+    if (config.requireMembership && !isAdmin(ctx.from.id)) {
+      const result = await checkCommunityMembership(ctx.telegram, ctx.from.id);
+      if (!result.ok) {
+        return ctx.replyWithMarkdown(
+          block(['🔒 Join channel & group to continue', tip('Verify when done')]),
+          joinKeyboard()
+        );
+      }
     }
     await ctx.reply('✅ Main menu', mainMenu());
   });

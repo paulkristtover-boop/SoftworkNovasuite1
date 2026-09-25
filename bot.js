@@ -1,7 +1,6 @@
 /**
  * NovaSuite — Telegraf bot entry
  * Private-chat only. Users + admin notifications. Shares Postgres with admin-cms.
- * Does not interact in Telegram channels or groups.
  */
 require('dotenv').config();
 
@@ -18,12 +17,17 @@ const { registerAdminHandlers } = require('./handlers/admin');
 const { startJobs } = require('./jobs');
 
 if (!config.botToken) {
-  console.error('[NovaSuite] BOT_TOKEN required');
+  console.error('[NovaSuite] BOT_TOKEN is required');
+  process.exit(1);
+}
+if (!config.databaseUrl) {
+  console.error('[NovaSuite] DATABASE_URL is required');
   process.exit(1);
 }
 
 const bot = new Telegraf(config.botToken);
-bot.use(privateOnly()); // never handle channel/group messages
+
+bot.use(privateOnly());
 bot.use(session());
 bot.use(rateLimit);
 bot.use(banCheck);
@@ -39,7 +43,7 @@ registerUserHandlers(bot);
 registerAdminHandlers(bot);
 
 bot.catch((err, ctx) => {
-  logger.error('Telegraf error', err.message);
+  logger.error('Telegraf error', err?.message || err);
   try {
     ctx.reply('⚠️ Something went wrong. Try again or contact support.').catch(() => {});
   } catch (_) {}
@@ -62,21 +66,26 @@ async function setupBotProfile(telegram) {
     'Group: https://t.me/softworknovasuitecommunity',
   ].join('\n');
 
-  const shortDescription = 'Earn & promote with USDT · Private chat bot · Softwork NovaSuite';
-
   await telegram.setMyDescription(description);
-  await telegram.setMyShortDescription(shortDescription);
-  await telegram.setMyCommands([
-    { command: 'start', description: 'Open NovaSuite (private chat)' },
-  ]);
-
+  await telegram.setMyShortDescription('Earn & promote with USDT · Private chat · Softwork NovaSuite');
+  await telegram.setMyCommands([{ command: 'start', description: 'Open NovaSuite (private chat)' }]);
   logger.info('Bot profile updated');
 }
 
 async function start() {
-  await pool.query('SELECT 1');
-  logger.info('PostgreSQL connected');
-  startJobs(bot);
+  try {
+    await pool.query('SELECT 1');
+    logger.info('PostgreSQL connected');
+  } catch (e) {
+    console.error('[NovaSuite] Database connection failed:', e.message);
+    process.exit(1);
+  }
+
+  try {
+    startJobs(bot);
+  } catch (e) {
+    logger.warn('Jobs failed to start:', e.message);
+  }
 
   try {
     await setupBotProfile(bot.telegram);
@@ -99,7 +108,14 @@ async function start() {
     await bot.telegram.setWebhook(`${config.webhookUrl}${config.webhookPath}`);
     app.listen(config.port, () => logger.info(`Webhook :${config.port}${config.webhookPath}`));
   } else {
-    await bot.launch();
+    // Avoid 409 Conflict if a webhook was left set from a previous deploy
+    try {
+      await bot.telegram.deleteWebhook({ drop_pending_updates: false });
+      logger.info('Cleared webhook (polling mode)');
+    } catch (e) {
+      logger.warn('deleteWebhook:', e.message);
+    }
+    await bot.launch({ dropPendingUpdates: false });
     logger.info('Bot started (polling, private chats only)');
   }
 
@@ -108,6 +124,6 @@ async function start() {
 }
 
 start().catch((e) => {
-  logger.error('Start failed', e);
+  console.error('[NovaSuite] Start failed:', e);
   process.exit(1);
 });

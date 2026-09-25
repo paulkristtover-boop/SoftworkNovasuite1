@@ -4,16 +4,17 @@ const { getSetting, setSetting } = require('./settingsService');
 const { idempotencyKey } = require('../utils/helpers');
 const { audit } = require('../utils/audit');
 
-async function createDeposit({ userId, amount, network, txHash }) {
+async function createDeposit({ userId, amount, network, txHash, currency, cryptoAmount, note }) {
   const key = idempotencyKey('deposit', userId, amount, network, txHash || Date.now());
   if (txHash) {
     const dup = await pool.query(`SELECT id FROM deposits WHERE tx_hash=$1`, [txHash]);
     if (dup.rows[0]) throw new Error('This TxID was already submitted.');
   }
+  const adminNote = note || (cryptoAmount ? `Send ${cryptoAmount} ${currency || ''}`.trim() : null);
   const res = await pool.query(
-    `INSERT INTO deposits (user_id, amount, network, tx_hash, status, idempotency_key)
-     VALUES ($1,$2,$3,$4,'pending',$5) RETURNING *`,
-    [userId, amount, network, txHash || null, key]
+    `INSERT INTO deposits (user_id, amount, network, tx_hash, status, idempotency_key, admin_note)
+     VALUES ($1,$2,$3,$4,'pending',$5,$6) RETURNING *`,
+    [userId, amount, network, txHash || null, key, adminNote]
   );
   return res.rows[0];
 }

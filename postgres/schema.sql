@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS users (
   ban_reason        TEXT,
   fraud_score       INT DEFAULT 0,
   last_active_at    TIMESTAMPTZ,
+  membership_verified BOOLEAN DEFAULT FALSE,
+  join_reminded_at  TIMESTAMPTZ,
   created_at        TIMESTAMPTZ DEFAULT NOW(),
   updated_at        TIMESTAMPTZ DEFAULT NOW()
 );
@@ -36,6 +38,10 @@ CREATE TABLE IF NOT EXISTS payment_addresses (
   address     VARCHAR(255) NOT NULL,
   is_active   BOOLEAN DEFAULT TRUE,
   label       VARCHAR(100),
+  min_amount  NUMERIC(18, 8) DEFAULT 1,
+  fee_percent NUMERIC(8, 4) DEFAULT 0,
+  rate_usd    NUMERIC(18, 8),
+  coingecko_id VARCHAR(50),
   created_at  TIMESTAMPTZ DEFAULT NOW(),
   updated_at  TIMESTAMPTZ DEFAULT NOW()
 );

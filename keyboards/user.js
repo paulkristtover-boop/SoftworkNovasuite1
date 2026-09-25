@@ -76,6 +76,17 @@ function promoteMenu() {
   ]);
 }
 
+function joinKeyboard() {
+  const config = require('../config');
+  const channelUrl = config.channelUrl || 'https://t.me/SoftworkNovaSuite';
+  const groupUrl = config.groupUrl || 'https://t.me/softworknovasuitecommunity';
+  return Markup.inlineKeyboard([
+    [Markup.button.url('1️⃣ Join channel', channelUrl)],
+    [Markup.button.url('2️⃣ Join group', groupUrl)],
+    [Markup.button.callback('✅ 3️⃣ Verify membership', 'verify_join')],
+  ]);
+}
+
 function backHome() {
   return Markup.inlineKeyboard([[Markup.button.callback('« Main menu', 'go_home')]]);
 }
@@ -91,4 +102,5 @@ module.exports = {
   adTypeKeyboard,
   promoteMenu,
   backHome,
+  joinKeyboard,
 };

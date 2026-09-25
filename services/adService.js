@@ -96,7 +96,7 @@ async function getAvailableAdForUser(userId) {
 
 async function listMyAds(ownerId, limit = 20) {
   const res = await pool.query(
-    `SELECT * FROM ads WHERE owner_id=$1 ORDER BY created_at DESC LIMIT $2`,
+    `SELECT * FROM ads WHERE owner_id=$1 AND status <> 'deleted' ORDER BY created_at DESC LIMIT $2`,
     [ownerId, limit]
   );
   return res.rows;
@@ -223,6 +223,134 @@ async function setAdStatus(adId, status, adminNote) {
   return getAd(adId);
 }
 
+
+async function assertOwner(adId, ownerId) {
+  const ad = await getAd(adId);
+  if (!ad) throw new Error('Campaign not found');
+  if (String(ad.owner_id) !== String(ownerId)) throw new Error('Not your campaign');
+  return ad;
+}
+
+async function topUpBudget(adId, ownerId, amount) {
+  const amt = parseFloat(amount);
+  if (!Number.isFinite(amt) || amt <= 0) throw new Error('Invalid top-up amount');
+  const feePct = config.adPlatformFeePercent || 0;
+  const feeAmount = Math.round(amt * (feePct / 100) * 1e6) / 1e6;
+  const totalDebit = amt + feeAmount;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const adRes = await client.query(`SELECT * FROM ads WHERE id=$1 FOR UPDATE`, [adId]);
+    if (!adRes.rows[0]) throw new Error('Campaign not found');
+    const ad = adRes.rows[0];
+    if (String(ad.owner_id) !== String(ownerId)) throw new Error('Not your campaign');
+    if (['rejected', 'deleted'].includes(ad.status)) throw new Error('Cannot top up this campaign');
+
+    const u = await client.query(`SELECT balance FROM users WHERE telegram_id=$1 FOR UPDATE`, [ownerId]);
+    if (!u.rows[0] || parseFloat(u.rows[0].balance) < totalDebit) {
+      throw new Error(`Insufficient balance (need ${totalDebit} USDT incl. fee)`);
+    }
+    const newBal = parseFloat(u.rows[0].balance) - totalDebit;
+    await client.query(`UPDATE users SET balance=$1, updated_at=NOW() WHERE telegram_id=$2`, [newBal, ownerId]);
+    const newBudget = parseFloat(ad.budget) + amt;
+    let status = ad.status;
+    if (status === 'finished' || status === 'paused') status = status === 'finished' ? 'pending' : status;
+    // if finished from budget, reopen as active if was active-like
+    if (ad.status === 'finished') status = 'pending';
+
+    await client.query(
+      `UPDATE ads SET budget=$1, status=$2, updated_at=NOW() WHERE id=$3`,
+      [newBudget, status, adId]
+    );
+    await client.query(
+      `INSERT INTO transactions (user_id, type, amount, balance_after, reference_id, reference_type, note, idempotency_key)
+       VALUES ($1,'ad_topup',$2,$3,$4,'ad','Campaign top-up',$5)`,
+      [ownerId, -totalDebit, newBal, adId, idempotencyKey('ad_topup', adId, Date.now())]
+    );
+    if (feeAmount > 0) {
+      const tb = await client.query(`SELECT value FROM settings WHERE key='treasury_balance'`);
+      const tbal = (parseFloat(tb.rows[0]?.value || '0') || 0) + feeAmount;
+      await client.query(
+        `INSERT INTO settings (key, value, updated_at) VALUES ('treasury_balance',$1,NOW())
+         ON CONFLICT (key) DO UPDATE SET value=$1, updated_at=NOW()`,
+        [String(tbal)]
+      );
+    }
+    await client.query('COMMIT');
+    return { ...(await getAd(adId)), topUp: amt, feeAmount, totalDebit };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+async function pauseAd(adId, ownerId) {
+  const ad = await assertOwner(adId, ownerId);
+  if (ad.status !== 'active') throw new Error('Only active campaigns can be paused');
+  await pool.query(`UPDATE ads SET status='paused', updated_at=NOW() WHERE id=$1`, [adId]);
+  return getAd(adId);
+}
+
+async function resumeAd(adId, ownerId) {
+  const ad = await assertOwner(adId, ownerId);
+  if (ad.status !== 'paused') throw new Error('Only paused campaigns can be resumed');
+  await pool.query(`UPDATE ads SET status='active', updated_at=NOW() WHERE id=$1`, [adId]);
+  return getAd(adId);
+}
+
+async function deleteAd(adId, ownerId) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const adRes = await client.query(`SELECT * FROM ads WHERE id=$1 FOR UPDATE`, [adId]);
+    if (!adRes.rows[0]) throw new Error('Campaign not found');
+    const ad = adRes.rows[0];
+    if (String(ad.owner_id) !== String(ownerId)) throw new Error('Not your campaign');
+    if (ad.status === 'deleted') throw new Error('Already deleted');
+
+    const remaining = Math.max(0, parseFloat(ad.budget) - parseFloat(ad.spent));
+    if (remaining > 0 && ['pending', 'paused', 'active', 'finished'].includes(ad.status)) {
+      const u = await client.query(`SELECT balance FROM users WHERE telegram_id=$1 FOR UPDATE`, [ownerId]);
+      const newBal = parseFloat(u.rows[0].balance) + remaining;
+      await client.query(`UPDATE users SET balance=$1, updated_at=NOW() WHERE telegram_id=$2`, [newBal, ownerId]);
+      await client.query(
+        `INSERT INTO transactions (user_id, type, amount, balance_after, reference_id, reference_type, note, idempotency_key)
+         VALUES ($1,'ad_refund',$2,$3,$4,'ad','Unused budget refund on delete',$5)`,
+        [ownerId, remaining, newBal, adId, idempotencyKey('ad_refund', adId)]
+      );
+    }
+    await client.query(`UPDATE ads SET status='deleted', updated_at=NOW() WHERE id=$1`, [adId]);
+    await client.query('COMMIT');
+    return { refunded: remaining };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+async function updateAd(adId, ownerId, fields) {
+  const ad = await assertOwner(adId, ownerId);
+  if (['deleted', 'rejected'].includes(ad.status)) throw new Error('Cannot edit this campaign');
+  const title = fields.title != null ? String(fields.title).slice(0, 200) : ad.title;
+  const url = fields.url != null ? String(fields.url) : ad.url;
+  const description = fields.description !== undefined ? fields.description : ad.description;
+  // editing live ad may need re-approval for url/title change
+  let status = ad.status;
+  if (ad.status === 'active' && (fields.url || fields.title)) {
+    status = 'pending';
+  }
+  await pool.query(
+    `UPDATE ads SET title=$1, url=$2, description=$3, status=$4, updated_at=NOW() WHERE id=$5`,
+    [title, url, description, status, adId]
+  );
+  return getAd(adId);
+}
+
 module.exports = {
   createAd,
   getAvailableAdForUser,
@@ -231,4 +359,9 @@ module.exports = {
   setAdStatus,
   listMyAds,
   getAd,
+  topUpBudget,
+  pauseAd,
+  resumeAd,
+  deleteAd,
+  updateAd,
 };

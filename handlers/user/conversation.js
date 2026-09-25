@@ -1,4 +1,5 @@
-const { createAd } = require('../../services/adService');
+const { createAd, topUpBudget, updateAd } = require('../../services/adService');
+const { quoteDeposit } = require('../../services/ratesService');
 const { createDeposit, createWithdrawal } = require('../../services/financeService');
 const { getSetting } = require('../../services/settingsService');
 const { getUser } = require('../../services/userService');
@@ -162,30 +163,52 @@ async function handleConversation(ctx, next) {
     }
 
     if (step === 'dep_amount') {
-      const amount = parseFloat(text);
-      if (isNaN(amount) || amount < (config.minDeposit || 1)) {
-        return ctx.reply(errorMsg(`Minimum deposit is ${config.minDeposit || 1} USDT.`), cancelInline());
+      const usd = parseFloat(text);
+      const d = ctx.session.deposit || {};
+      try {
+        const q = await quoteDeposit({
+          currency: d.currency,
+          network: d.network,
+          usdAmount: usd,
+          addressRow: d,
+        });
+        ctx.session.deposit = { ...d, ...q, amount: q.desiredCreditUsd };
+        ctx.session.step = 'dep_tx';
+        return ctx.replyWithMarkdown(
+          block([
+            stepProgress(2, 3, `Credit: *${formatUsd(q.desiredCreditUsd)}*`),
+            SEP,
+            `*Send exactly:*`,
+            `*${q.cryptoAmount} ${q.currency}* on *${q.network}*`,
+            '',
+            `Rate: $${q.priceUsd} · Fee: ${q.feePercent}% ($${q.feeUsd})`,
+            `You pay ≈ $${q.payUsd} value → credit *${formatUsd(q.desiredCreditUsd)}*`,
+            '',
+            '*Address:*',
+            '`' + q.address + '`',
+            '',
+            'After sending, reply with *TxID* (or `skip`):',
+          ]),
+          cancelInline()
+        );
+      } catch (e) {
+        return ctx.reply(errorMsg(e.message), cancelInline());
       }
-      ctx.session.deposit.amount = amount;
-      ctx.session.step = 'dep_tx';
-      return ctx.replyWithMarkdown(
-        block([
-          stepProgress(3, 3, `Amount: *${formatUsd(amount)}*`),
-          '',
-          'Reply with the *TxID* after sending,',
-          'or type `skip` if you prefer.',
-        ]),
-        cancelInline()
-      );
     }
 
     if (step === 'dep_tx') {
       const txHash = text.toLowerCase() === 'skip' ? null : text;
+      const d = ctx.session.deposit;
       const dep = await createDeposit({
         userId: ctx.from.id,
-        amount: ctx.session.deposit.amount,
-        network: ctx.session.deposit.network,
+        amount: d.amount || d.desiredCreditUsd,
+        network: d.network,
         txHash,
+        currency: d.currency,
+        cryptoAmount: d.cryptoAmount,
+        note: d.cryptoAmount
+          ? `Expect ${d.cryptoAmount} ${d.currency} (credit $${d.desiredCreditUsd || d.amount})`
+          : null,
       });
       ctx.session = {};
       await ctx.replyWithMarkdown(
@@ -194,10 +217,10 @@ async function handleConversation(ctx, next) {
           block([
             SEP,
             `Request *#${dep.id}*`,
-            `Amount: ${formatUsd(dep.amount)}`,
-            `Network: ${dep.network}`,
+            `Credit: ${formatUsd(dep.amount)}`,
+            d.cryptoAmount ? `Sent: ${d.cryptoAmount} ${d.currency} · ${d.network}` : `Network: ${dep.network}`,
             '',
-            tip('You will be notified when it is approved'),
+            tip('You will be notified when admin approves'),
           ])
         ),
         mainMenu()
@@ -277,6 +300,62 @@ async function handleConversation(ctx, next) {
         } catch (_) {}
       }
       return;
+    }
+
+    
+    if (step === 'camp_topup_amt') {
+      const amount = parseFloat(text);
+      if (isNaN(amount) || amount <= 0) {
+        return ctx.reply(errorMsg('Enter a valid USDT amount.'), cancelInline());
+      }
+      try {
+        const ad = await topUpBudget(ctx.session.campId, ctx.from.id, amount);
+        ctx.session = {};
+        return ctx.replyWithMarkdown(
+          success(
+            'Budget topped up',
+            block([
+              SEP,
+              `#${ad.id} · ${ad.title}`,
+              `Added: ${formatUsd(ad.topUp)} · Fee: ${formatUsd(ad.feeAmount)}`,
+              `New budget: *${formatUsd(ad.budget)}*`,
+              ad.status === 'pending' ? '_May need re-approval if was finished_' : null,
+            ])
+          ),
+          mainMenu()
+        );
+      } catch (e) {
+        ctx.session = {};
+        return ctx.reply(errorMsg(e.message), mainMenu());
+      }
+    }
+
+    if (step === 'camp_edit_url') {
+      let url = text.trim();
+      if (url.startsWith('t.me')) url = 'https://' + url;
+      if (url.startsWith('open.spotify.com')) url = 'https://' + url;
+      if (!/^https?:\/\//i.test(url)) {
+        return ctx.reply(errorMsg('Send a full https:// link'), cancelInline());
+      }
+      try {
+        const ad = await updateAd(ctx.session.campId, ctx.from.id, { url });
+        ctx.session = {};
+        return ctx.replyWithMarkdown(
+          success(
+            'Campaign updated',
+            block([
+              SEP,
+              `#${ad.id} · status *${ad.status}*`,
+              ad.url,
+              ad.status === 'pending' ? '_Sent for admin re-approval_' : null,
+            ])
+          ),
+          mainMenu()
+        );
+      } catch (e) {
+        ctx.session = {};
+        return ctx.reply(errorMsg(e.message), mainMenu());
+      }
     }
 
     if (step === 'idea_content') {

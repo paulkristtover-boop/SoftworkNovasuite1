@@ -1,17 +1,8 @@
 const { checkCommunityMembership, communityLinks } = require('../services/membershipService');
 const { isAdmin } = require('../utils/helpers');
 const config = require('../config');
-const { Markup } = require('telegraf');
 const { block, SEP, tip } = require('../utils/ui');
-
-function joinKeyboard() {
-  const { channelUrl, groupUrl } = communityLinks();
-  return Markup.inlineKeyboard([
-    [Markup.button.url('1️⃣ Join channel', channelUrl)],
-    [Markup.button.url('2️⃣ Join group', groupUrl)],
-    [Markup.button.callback('✅ 3️⃣ Verify membership', 'verify_join')],
-  ]);
-}
+const { joinKeyboard } = require('../keyboards/user');
 
 function requireMembership() {
   return async (ctx, next) => {
@@ -55,4 +46,4 @@ function requireMembership() {
   };
 }
 
-module.exports = { requireMembership, joinKeyboard };
+module.exports = { requireMembership };

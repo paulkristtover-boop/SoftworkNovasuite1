@@ -11,6 +11,7 @@ async function migrate() {
     await client.query(sql);
     const defaults = [
       ['min_withdraw', process.env.MIN_WITHDRAW || '5'],
+      ['min_deposit', process.env.MIN_DEPOSIT || '1'],
       ['referral_bonus_percent', process.env.REFERRAL_BONUS_PERCENT || '10'],
       ['default_ad_reward', process.env.DEFAULT_AD_REWARD || '0.01'],
       ['currency', 'USDT'],
@@ -34,9 +35,23 @@ async function migrate() {
       );
     }
     await client.query('COMMIT');
+
+    // Additive columns (safe outside transaction for IF NOT EXISTS)
+    await client.query(`
+      ALTER TABLE payment_addresses ADD COLUMN IF NOT EXISTS min_amount NUMERIC(18,8) DEFAULT 1;
+      ALTER TABLE payment_addresses ADD COLUMN IF NOT EXISTS fee_percent NUMERIC(8,4) DEFAULT 0;
+      ALTER TABLE payment_addresses ADD COLUMN IF NOT EXISTS rate_usd NUMERIC(18,8);
+      ALTER TABLE payment_addresses ADD COLUMN IF NOT EXISTS coingecko_id VARCHAR(50);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_verified BOOLEAN DEFAULT FALSE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS join_reminded_at TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS welcome_notified BOOLEAN DEFAULT FALSE;
+    `);
+
     console.log('[NovaSuite] Migration OK');
   } catch (e) {
-    await client.query('ROLLBACK');
+    try {
+      await client.query('ROLLBACK');
+    } catch (_) {}
     console.error('[NovaSuite] Migration failed', e);
     process.exit(1);
   } finally {

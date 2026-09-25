@@ -211,7 +211,7 @@ function registerAdminHandlers(bot) {
       }
       const users = await pool.query(
         `SELECT telegram_id FROM users WHERE COALESCE(is_banned,FALSE)=FALSE AND telegram_id <> $1
-         ORDER BY last_active_at DESC NULLS LAST LIMIT 300`,
+         ORDER BY created_at DESC LIMIT 300`,
         [ad?.owner_id || 0]
       );
       const msg = `⚡ New campaign live\n${ad?.title || '#' + adId}\nReward: ${ad?.reward} USDT\nOpen Earn in the bot.`;
