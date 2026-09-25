@@ -1,6 +1,8 @@
 import { AdminShell } from '@/components/AdminShell';
 import { query } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
+
 export const dynamic = 'force-dynamic';
 
 async function addAddress(formData) {
@@ -18,50 +20,101 @@ async function addAddress(formData) {
       formData.get('rate_usd') || null,
     ]
   );
-  await query("INSERT INTO audit_logs (actor_type,action,target_type,details) VALUES ('admin','add_payment_address','payment_address',$1)", [JSON.stringify({ network: formData.get('network') })]);
   revalidatePath('/addresses');
-}
-async function toggleAddress(formData) {
-  'use server';
-  await query('UPDATE payment_addresses SET is_active = NOT is_active, updated_at=NOW() WHERE id=$1', [formData.get('id')]);
-  revalidatePath('/addresses');
-}
-async function deleteAddress(formData) {
-  'use server';
-  await query('DELETE FROM payment_addresses WHERE id=$1', [formData.get('id')]);
-  revalidatePath('/addresses');
+  redirect('/addresses?ok=' + encodeURIComponent('Payment method added'));
 }
 
-export default async function Page() {
-  const res = await query('SELECT * FROM payment_addresses ORDER BY network, id');
+async function toggleAddress(formData) {
+  'use server';
+  const id = formData.get('id');
+  await query(`UPDATE payment_addresses SET is_active = NOT is_active, updated_at=NOW() WHERE id=$1`, [id]);
+  revalidatePath('/addresses');
+  redirect('/addresses?ok=' + encodeURIComponent('Method updated'));
+}
+
+async function deleteAddress(formData) {
+  'use server';
+  await query(`DELETE FROM payment_addresses WHERE id=$1`, [formData.get('id')]);
+  revalidatePath('/addresses');
+  redirect('/addresses?ok=' + encodeURIComponent('Method removed'));
+}
+
+export default async function AddressesPage() {
+  const res = await query(`SELECT * FROM payment_addresses ORDER BY currency, network`);
+
   return (
-    <AdminShell title="Payment Addresses">
-      <p className="muted" style={{ marginBottom: 12 }}>
-        Shown to users in the bot for USDT deposits. No external payment API.
-      </p>
+    <AdminShell title="Payment methods">
+      <div className="page-header">
+        <h2>Deposit addresses</h2>
+        <p>
+          Users deposit any configured coin. Balance is always USDT. Live market rates apply unless you set a fixed
+          Rate USD. Fee % is charged on top of the credit amount (user sends credit + fee).
+        </p>
+      </div>
+
+      <div className="panel" style={{ marginBottom: '1.25rem' }}>
+        <div className="panel-header">
+          <h3>How pricing works</h3>
+        </div>
+        <div className="panel-body" style={{ padding: '0.85rem 1.15rem', fontSize: '0.875rem' }}>
+          <p className="muted" style={{ margin: 0 }}>
+            User wants <strong>$10 USDT credit</strong>, method fee 2%, USDT TRC20 → pays ≈ $10.20 USDT to your address.
+            BTC method uses live (or fixed) BTC/USD rate so they send the exact BTC for $10 + fee.
+          </p>
+          <p className="muted" style={{ margin: '0.5rem 0 0' }}>
+            Suggested coins: USDT (TRC20/BEP20/ERC20), USDC, BTC, ETH, BNB, SOL, TON, TRX.
+          </p>
+        </div>
+      </div>
+
       <div className="table-wrap" style={{ marginBottom: 24 }}>
         <table>
           <thead>
-            <tr><th>Network</th><th>Currency</th><th>Address</th><th>Min $</th><th>Fee %</th><th>Rate</th><th>Active</th><th></th></tr>
+            <tr>
+              <th>Network</th>
+              <th>Coin</th>
+              <th>Address</th>
+              <th>Min $</th>
+              <th>Fee %</th>
+              <th>Rate</th>
+              <th>Active</th>
+              <th></th>
+            </tr>
           </thead>
           <tbody>
+            {res.rows.length === 0 && (
+              <tr>
+                <td colSpan={8} className="muted" style={{ textAlign: 'center' }}>
+                  No methods yet — add USDT TRC20 first
+                </td>
+              </tr>
+            )}
             {res.rows.map((a) => (
               <tr key={a.id}>
                 <td>{a.network}</td>
-                <td>{a.currency}</td>
-                <td className="mono">{a.address}</td>
-                <td>{a.min_amount ?? '1'}</td>
-                <td>{a.fee_percent ?? '0'}</td>
+                <td>
+                  <strong>{a.currency}</strong>
+                  {a.label ? <div className="muted" style={{ fontSize: '0.75rem' }}>{a.label}</div> : null}
+                </td>
+                <td className="mono" style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {a.address}
+                </td>
+                <td>${a.min_amount ?? '1'}</td>
+                <td>{a.fee_percent ?? '0'}%</td>
                 <td>{a.rate_usd ? `$${a.rate_usd}` : 'live'}</td>
-                <td>{a.is_active ? 'Yes' : 'No'}</td>
+                <td>{a.is_active ? <span className="badge badge-active">On</span> : <span className="badge">Off</span>}</td>
                 <td>
                   <form action={toggleAddress} className="inline-form">
                     <input type="hidden" name="id" value={a.id} />
-                    <button type="submit" className="btn btn-sm btn-ghost">{a.is_active ? 'Disable' : 'Enable'}</button>
+                    <button type="submit" className="btn btn-sm btn-ghost">
+                      {a.is_active ? 'Disable' : 'Enable'}
+                    </button>
                   </form>{' '}
                   <form action={deleteAddress} className="inline-form">
                     <input type="hidden" name="id" value={a.id} />
-                    <button type="submit" className="btn btn-sm btn-danger">Delete</button>
+                    <button type="submit" className="btn btn-sm btn-danger">
+                      Delete
+                    </button>
                   </form>
                 </td>
               </tr>
@@ -69,16 +122,41 @@ export default async function Page() {
           </tbody>
         </table>
       </div>
+
       <div className="form-card">
+        <h3 style={{ fontSize: '0.95rem', marginBottom: 12 }}>Add payment method</h3>
         <form action={addAddress}>
-          <div className="form-group"><label>Network</label><input name="network" placeholder="TRC20" required /></div>
-          <div className="form-group"><label>Currency</label><input name="currency" defaultValue="USDT" /></div>
-          <div className="form-group"><label>Address</label><input name="address" required style={{ maxWidth: '100%' }} /></div>
-          <div className="form-group"><label>Label</label><input name="label" placeholder="USDT TRC20 / BTC main" /></div>
-          <div className="form-group"><label>Min deposit (USD value)</label><input name="min_amount" type="number" step="0.01" defaultValue="1" /></div>
-          <div className="form-group"><label>Fee %</label><input name="fee_percent" type="number" step="0.01" defaultValue="0" /></div>
-          <div className="form-group"><label>Rate USD (optional override; empty = live market)</label><input name="rate_usd" type="number" step="0.0001" placeholder="Leave empty for live" /></div>
-          <button type="submit" className="btn btn-primary">Add address</button>
+          <div className="form-group">
+            <label>Network</label>
+            <input name="network" placeholder="TRC20 / BEP20 / ERC20 / BTC / SOL / TON" required />
+          </div>
+          <div className="form-group">
+            <label>Currency (coin)</label>
+            <input name="currency" defaultValue="USDT" placeholder="USDT, BTC, ETH…" />
+          </div>
+          <div className="form-group">
+            <label>Deposit address (Trust wallet)</label>
+            <input name="address" required style={{ maxWidth: '100%' }} />
+          </div>
+          <div className="form-group">
+            <label>Label (optional)</label>
+            <input name="label" placeholder="Main USDT TRC20" />
+          </div>
+          <div className="form-group">
+            <label>Min deposit (USD credit)</label>
+            <input name="min_amount" type="number" step="0.01" defaultValue="5" />
+          </div>
+          <div className="form-group">
+            <label>Platform fee %</label>
+            <input name="fee_percent" type="number" step="0.01" defaultValue="0" />
+          </div>
+          <div className="form-group">
+            <label>Fixed USD rate (optional)</label>
+            <input name="rate_usd" type="number" step="0.00000001" placeholder="Empty = live CoinGecko" />
+          </div>
+          <button type="submit" className="btn btn-primary">
+            Add method
+          </button>
         </form>
       </div>
     </AdminShell>

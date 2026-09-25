@@ -1,8 +1,10 @@
 const { getUser } = require('../../services/userService');
-const { getSetting } = require('../../services/settingsService');
+const { getSetting, getPaymentAddresses } = require('../../services/settingsService');
+const { quoteWithdraw, formatQuoteLines } = require('../../services/ratesService');
 const { mainMenu, cancelInline } = require('../../keyboards/user');
 const { formatUsd } = require('../../utils/helpers');
 const { block, SEP, stepProgress, tip, errorMsg } = require('../../utils/ui');
+const { Markup } = require('telegraf');
 const config = require('../../config');
 
 module.exports = function withdrawHandler(bot) {
@@ -18,8 +20,7 @@ module.exports = function withdrawHandler(bot) {
           SEP,
           `Minimum: *${formatUsd(min)}*`,
           `Your balance: *${formatUsd(user.balance)}*`,
-          '',
-          tip('Earn more from ads or deposit to reach the minimum'),
+          tip('Earn or deposit to reach the minimum'),
         ]),
         mainMenu()
       );
@@ -28,14 +29,14 @@ module.exports = function withdrawHandler(bot) {
     ctx.session = { step: 'wd_amount' };
     await ctx.replyWithMarkdown(
       block([
-        '➖ *Withdraw USDT*',
+        '➖ *Withdraw*',
         SEP,
         `Available: *${formatUsd(user.balance)}*`,
-        `Minimum: *${formatUsd(min)}*`,
+        `Platform minimum: *${formatUsd(min)}*`,
         '',
-        stepProgress(1, 3, 'Enter the *amount* to withdraw'),
+        stepProgress(1, 3, 'Enter amount in *USDT* to withdraw from balance'),
         '',
-        tip('Paid manually by admin from Trust wallet after review'),
+        tip('Admin pays manually from Trust wallet after approval'),
       ]),
       cancelInline()
     );

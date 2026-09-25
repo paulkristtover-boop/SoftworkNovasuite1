@@ -1,5 +1,5 @@
 const { createAd, topUpBudget, updateAd } = require('../../services/adService');
-const { quoteDeposit, quoteWithdraw } = require('../../services/ratesService');
+const { quoteDeposit, quoteWithdraw, formatQuoteLines } = require('../../services/ratesService');
 const { createDeposit, createWithdrawal } = require('../../services/financeService');
 const { getSetting } = require('../../services/settingsService');
 const { getUser } = require('../../services/userService');
@@ -172,24 +172,20 @@ async function handleConversation(ctx, next) {
           usdAmount: usd,
           addressRow: d,
         });
-        ctx.session.deposit = { ...d, ...q, amount: q.desiredCreditUsd };
-        ctx.session.step = 'dep_tx';
+        ctx.session.deposit = { ...d, ...q, amount: q.creditUsd || q.desiredCreditUsd };
+        ctx.session.step = 'dep_confirm_wait';
         return ctx.replyWithMarkdown(
           block([
-            stepProgress(2, 3, `Credit: *${formatUsd(q.desiredCreditUsd)}*`),
+            '📋 *Payment summary*',
             SEP,
-            `*Send exactly:*`,
-            `*${q.cryptoAmount} ${q.currency}* on *${q.network}*`,
+            ...formatQuoteLines(q, 'deposit'),
             '',
-            `Rate: $${q.priceUsd} · Fee: ${q.feePercent}% ($${q.feeUsd})`,
-            `You pay ≈ $${q.payUsd} value → credit *${formatUsd(q.desiredCreditUsd)}*`,
-            '',
-            '*Address:*',
-            '`' + q.address + '`',
-            '',
-            'After sending, reply with *TxID* (or `skip`):',
+            tip('Confirm to reveal the deposit address'),
           ]),
-          cancelInline()
+          require('telegraf').Markup.inlineKeyboard([
+            [require('telegraf').Markup.button.callback('✅ Confirm & show address', 'dep_confirm')],
+            [require('telegraf').Markup.button.callback('« Cancel', 'cancel')],
+          ])
         );
       } catch (e) {
         return ctx.reply(errorMsg(e.message), cancelInline());
