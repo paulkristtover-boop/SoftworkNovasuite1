@@ -1,5 +1,5 @@
 const { createAd, topUpBudget, updateAd } = require('../../services/adService');
-const { quoteDeposit } = require('../../services/ratesService');
+const { quoteDeposit, quoteWithdraw } = require('../../services/ratesService');
 const { createDeposit, createWithdrawal } = require('../../services/financeService');
 const { getSetting } = require('../../services/settingsService');
 const { getUser } = require('../../services/userService');
@@ -258,8 +258,22 @@ async function handleConversation(ctx, next) {
     if (step === 'wd_network') {
       ctx.session.wd.network = text.toUpperCase();
       ctx.session.step = 'wd_address';
+      let quoteLine = '';
+      try {
+        const q = await quoteWithdraw({
+          currency: 'USDT',
+          network: ctx.session.wd.network,
+          usdAmount: ctx.session.wd.amount,
+          addressRow: { fee_percent: 0, rate_usd: 1 },
+        });
+        quoteLine = `You request *${formatUsd(q.requestUsd)}* · ~receive *${q.cryptoAmount} USDT* on ${q.network}`;
+      } catch (_) {}
       return ctx.replyWithMarkdown(
-        block([stepProgress(3, 3, 'Paste your *USDT wallet address*')]),
+        block([
+          stepProgress(3, 3, 'Paste your *wallet address*'),
+          quoteLine || null,
+          tip('Admin pays from Trust wallet after review'),
+        ]),
         cancelInline()
       );
     }

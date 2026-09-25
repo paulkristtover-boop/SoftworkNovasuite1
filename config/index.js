@@ -36,7 +36,9 @@ module.exports = {
   /** @username or -100id — bot must be admin in channel/group to verify */
   channelUsername: process.env.CHANNEL_USERNAME || '@SoftworkNovaSuite',
   groupUsername: process.env.GROUP_USERNAME || '@softworknovasuitecommunity',
-  requireMembership: process.env.REQUIRE_MEMBERSHIP !== 'false', // default ON — must join channel+group
+  requireMembership: process.env.REQUIRE_MEMBERSHIP !== 'false',
+  /** Hard-block until join; default soft reminders only */
+  strictMembership: process.env.STRICT_MEMBERSHIP === 'true',
   defaultAdReward: num(process.env.DEFAULT_AD_REWARD, 0.01),
   maxAdsPerUser: int(process.env.MAX_ADS_PER_USER, 20),
   adViewDurationSec: int(process.env.AD_VIEW_DURATION_SEC, 15),

@@ -27,8 +27,9 @@ function campaignControls(a) {
     rows.push([Markup.button.callback('▶ Resume', `camp_resume:${a.id}`)]);
   }
   if (!['deleted', 'rejected'].includes(a.status)) {
+    const topLabel = a.status === 'finished' ? '🔄 Renew / top up' : '➕ Top up';
     rows.push([
-      Markup.button.callback('➕ Top up', `camp_topup:${a.id}`),
+      Markup.button.callback(topLabel, `camp_topup:${a.id}`),
       Markup.button.callback('✏️ Edit link', `camp_edit:${a.id}`),
     ]);
     rows.push([Markup.button.callback('🗑 Delete / refund', `camp_del:${a.id}`)]);
