@@ -59,6 +59,53 @@ async function migrate() {
       ALTER TABLE treasury_logs ADD COLUMN IF NOT EXISTS tax_kind VARCHAR(40);
     `);
 
+    // Fix money columns that may still be INTEGER on older DBs
+    // (CREATE TABLE IF NOT EXISTS does not change existing column types)
+    await client.query(`
+      DO $$ BEGIN
+        -- ad_views.reward must accept decimal rewards like 0.005
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='ad_views' AND column_name='reward'
+            AND data_type IN ('integer','bigint','smallint')
+        ) THEN
+          ALTER TABLE ad_views ALTER COLUMN reward TYPE NUMERIC(18,8) USING reward::numeric;
+        END IF;
+
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='ads' AND column_name='reward'
+            AND data_type IN ('integer','bigint','smallint')
+        ) THEN
+          ALTER TABLE ads ALTER COLUMN reward TYPE NUMERIC(18,8) USING reward::numeric;
+        END IF;
+
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='ads' AND column_name='budget'
+            AND data_type IN ('integer','bigint','smallint')
+        ) THEN
+          ALTER TABLE ads ALTER COLUMN budget TYPE NUMERIC(18,8) USING budget::numeric;
+        END IF;
+
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='ads' AND column_name='spent'
+            AND data_type IN ('integer','bigint','smallint')
+        ) THEN
+          ALTER TABLE ads ALTER COLUMN spent TYPE NUMERIC(18,8) USING spent::numeric;
+        END IF;
+
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='users' AND column_name='balance'
+            AND data_type IN ('integer','bigint','smallint')
+        ) THEN
+          ALTER TABLE users ALTER COLUMN balance TYPE NUMERIC(18,8) USING balance::numeric;
+        END IF;
+      END $$;
+    `);
+
     const taxDefaults = [
       ['deposit_tax_percent', process.env.DEPOSIT_TAX_PERCENT || '0'],
       ['withdraw_tax_percent', process.env.WITHDRAW_TAX_PERCENT || '0'],

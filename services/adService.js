@@ -83,10 +83,10 @@ async function createAd({
         description || null,
         url,
         type || 'website',
-        reward,
-        budget,
-        maxViews || null,
-        durationSec || config.adViewDurationSec,
+        parseFloat(reward),
+        parseFloat(budget),
+        maxViews != null ? parseInt(maxViews, 10) : null,
+        parseInt(durationSec || config.adViewDurationSec, 10) || 15,
       ]
     );
     await client.query(
@@ -158,14 +158,19 @@ async function startAdView(adId, userId, ipHash = null) {
   }
 
   const token = randomToken(16);
+  const rewardVal = parseFloat(row.reward);
+  if (!Number.isFinite(rewardVal) || rewardVal <= 0) {
+    throw new Error('Invalid campaign reward');
+  }
   await pool.query(
     `INSERT INTO ad_views (ad_id, user_id, reward, client_token, status, started_at, ip_hash, link_opened_at, verified, completed_at)
-     VALUES ($1,$2,$3,$4,'started',NOW(),$5,NULL,FALSE,NULL)
+     VALUES ($1,$2,$3::numeric,$4,'started',NOW(),$5,NULL,FALSE,NULL)
      ON CONFLICT (ad_id, user_id) DO UPDATE
        SET client_token=$4, started_at=NOW(), status='started', verified=FALSE,
-           completed_at=NULL, link_opened_at=NULL, ip_hash=COALESCE($5, ad_views.ip_hash)
+           completed_at=NULL, link_opened_at=NULL, ip_hash=COALESCE($5, ad_views.ip_hash),
+           reward=$3::numeric
        WHERE ad_views.verified=FALSE`,
-    [adId, userId, row.reward, token, ipHash]
+    [adId, userId, rewardVal, token, ipHash]
   );
   const durationSec = parseInt(row.duration_sec, 10) || config.adViewDurationSec;
   return { token, durationSec, ad: row };
