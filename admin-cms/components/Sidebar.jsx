@@ -90,7 +90,7 @@ export function Sidebar({ open, onClose }) {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`nav-link sidebar-link ${path === item.href ? 'active' : ''}`}
+                    className={`nav-link sidebar-link ${path === item.href || (item.href !== '/' && path.startsWith(item.href)) ? 'active' : ''}`}
                     onClick={handleNav}
                   >
                     <span className="nav-icon">{item.icon}</span>

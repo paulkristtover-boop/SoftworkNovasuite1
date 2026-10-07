@@ -223,9 +223,28 @@ function registerAdminHandlers(bot) {
   });
 
   bot.action(/^adm_ad_no:(\d+)$/, adminOnly, async (ctx) => {
-    await setAdStatus(parseInt(ctx.match[1], 10), 'rejected', 'Rejected by admin');
-    await ctx.answerCbQuery('Rejected');
-    await ctx.editMessageText(`❌ Ad #${ctx.match[1]} rejected`);
+    const adId = parseInt(ctx.match[1], 10);
+    try {
+      const ad = await setAdStatus(adId, 'rejected', 'Rejected by admin', 'Rejected by admin');
+      await ctx.answerCbQuery('Rejected & refunded');
+      const refunded = ad.refunded != null ? ad.refunded : 0;
+      await ctx.editMessageText(
+        `❌ Ad #${adId} rejected${refunded ? ` · refunded ${refunded} USDT` : ''}`
+      );
+      if (ad?.owner_id) {
+        try {
+          await ctx.telegram.sendMessage(
+            ad.owner_id,
+            `❌ Campaign #${adId} rejected${
+              refunded ? `\nRefunded *${refunded} USDT* to your wallet` : ''
+            }\n${ad.title || ''}`,
+            { parse_mode: 'Markdown' }
+          );
+        } catch (_) {}
+      }
+    } catch (e) {
+      await ctx.answerCbQuery(e.message, { show_alert: true });
+    }
   });
 }
 

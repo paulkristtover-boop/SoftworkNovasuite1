@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   balance           NUMERIC(18, 8) DEFAULT 0 NOT NULL CHECK (balance >= 0),
   total_earned      NUMERIC(18, 8) DEFAULT 0 NOT NULL,
   total_withdrawn   NUMERIC(18, 8) DEFAULT 0 NOT NULL,
+  total_deposited   NUMERIC(18, 8) DEFAULT 0 NOT NULL,
   referral_code     VARCHAR(32) UNIQUE,
   referred_by       BIGINT,
   is_banned         BOOLEAN DEFAULT FALSE,
@@ -19,6 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
   last_active_at    TIMESTAMPTZ,
   membership_verified BOOLEAN DEFAULT FALSE,
   join_reminded_at  TIMESTAMPTZ,
+  welcome_notified  BOOLEAN DEFAULT FALSE,
   created_at        TIMESTAMPTZ DEFAULT NOW(),
   updated_at        TIMESTAMPTZ DEFAULT NOW()
 );
@@ -50,10 +52,16 @@ CREATE TABLE IF NOT EXISTS deposits (
   id              SERIAL PRIMARY KEY,
   user_id         BIGINT NOT NULL REFERENCES users(telegram_id),
   amount          NUMERIC(18, 8) NOT NULL CHECK (amount > 0),
+  net_amount      NUMERIC(18, 8),
+  tax_amount      NUMERIC(18, 8) DEFAULT 0,
   network         VARCHAR(50),
+  currency        VARCHAR(20) DEFAULT 'USDT',
   tx_hash         VARCHAR(255),
   proof_url       TEXT,
   status          VARCHAR(20) DEFAULT 'pending',
+  source          VARCHAR(30) DEFAULT 'manual',
+  auto_verified   BOOLEAN DEFAULT FALSE,
+  verify_detail   JSONB DEFAULT '{}',
   admin_note      TEXT,
   review_checklist JSONB DEFAULT '{}',
   idempotency_key VARCHAR(64) UNIQUE,
@@ -68,6 +76,8 @@ CREATE TABLE IF NOT EXISTS withdrawals (
   id              SERIAL PRIMARY KEY,
   user_id         BIGINT NOT NULL REFERENCES users(telegram_id),
   amount          NUMERIC(18, 8) NOT NULL CHECK (amount > 0),
+  net_amount      NUMERIC(18, 8),
+  tax_amount      NUMERIC(18, 8) DEFAULT 0,
   network         VARCHAR(50),
   address         VARCHAR(255) NOT NULL,
   status          VARCHAR(20) DEFAULT 'pending',
@@ -95,10 +105,12 @@ CREATE TABLE IF NOT EXISTS ads (
   duration_sec    INT DEFAULT 15,
   status          VARCHAR(20) DEFAULT 'pending',
   admin_note      TEXT,
+  reject_reason   TEXT,
   created_at      TIMESTAMPTZ DEFAULT NOW(),
   updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_ads_status ON ads(status);
+CREATE INDEX IF NOT EXISTS idx_ads_owner ON ads(owner_id);
 
 -- Campaign / task verification (anti-fraud)
 CREATE TABLE IF NOT EXISTS ad_views (
@@ -108,6 +120,7 @@ CREATE TABLE IF NOT EXISTS ad_views (
   reward          NUMERIC(18, 8) NOT NULL,
   started_at      TIMESTAMPTZ DEFAULT NOW(),
   completed_at    TIMESTAMPTZ,
+  link_opened_at  TIMESTAMPTZ,
   verified        BOOLEAN DEFAULT FALSE,
   client_token    VARCHAR(64),
   ip_hash         VARCHAR(64),
@@ -148,6 +161,7 @@ CREATE TABLE IF NOT EXISTS treasury_logs (
   balance_after   NUMERIC(18, 8),
   note            TEXT,
   tx_hash         VARCHAR(255),
+  tax_kind        VARCHAR(40),
   idempotency_key VARCHAR(64) UNIQUE,
   created_by      BIGINT,
   created_at      TIMESTAMPTZ DEFAULT NOW()
@@ -185,7 +199,6 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at);
 
--- Anti-fraud events
 CREATE TABLE IF NOT EXISTS fraud_events (
   id              SERIAL PRIMARY KEY,
   user_id         BIGINT,
@@ -195,7 +208,6 @@ CREATE TABLE IF NOT EXISTS fraud_events (
   created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
--- CMS sessions (server-side, stronger than cookie-only)
 CREATE TABLE IF NOT EXISTS cms_sessions (
   id              VARCHAR(64) PRIMARY KEY,
   admin_label     VARCHAR(100),
@@ -207,7 +219,6 @@ CREATE TABLE IF NOT EXISTS cms_sessions (
   revoked         BOOLEAN DEFAULT FALSE
 );
 
--- Health / monitoring pings
 CREATE TABLE IF NOT EXISTS health_checks (
   id              SERIAL PRIMARY KEY,
   service         VARCHAR(50) NOT NULL,

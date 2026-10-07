@@ -45,7 +45,32 @@ async function migrate() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_verified BOOLEAN DEFAULT FALSE;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS join_reminded_at TIMESTAMPTZ;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS welcome_notified BOOLEAN DEFAULT FALSE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS total_deposited NUMERIC(18,8) DEFAULT 0;
+      ALTER TABLE deposits ADD COLUMN IF NOT EXISTS net_amount NUMERIC(18,8);
+      ALTER TABLE deposits ADD COLUMN IF NOT EXISTS tax_amount NUMERIC(18,8) DEFAULT 0;
+      ALTER TABLE deposits ADD COLUMN IF NOT EXISTS currency VARCHAR(20) DEFAULT 'USDT';
+      ALTER TABLE deposits ADD COLUMN IF NOT EXISTS source VARCHAR(30) DEFAULT 'manual';
+      ALTER TABLE deposits ADD COLUMN IF NOT EXISTS auto_verified BOOLEAN DEFAULT FALSE;
+      ALTER TABLE deposits ADD COLUMN IF NOT EXISTS verify_detail JSONB DEFAULT '{}';
+      ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS net_amount NUMERIC(18,8);
+      ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS tax_amount NUMERIC(18,8) DEFAULT 0;
+      ALTER TABLE ads ADD COLUMN IF NOT EXISTS reject_reason TEXT;
+      ALTER TABLE ad_views ADD COLUMN IF NOT EXISTS link_opened_at TIMESTAMPTZ;
+      ALTER TABLE treasury_logs ADD COLUMN IF NOT EXISTS tax_kind VARCHAR(40);
     `);
+
+    const taxDefaults = [
+      ['deposit_tax_percent', process.env.DEPOSIT_TAX_PERCENT || '0'],
+      ['withdraw_tax_percent', process.env.WITHDRAW_TAX_PERCENT || '0'],
+      ['ad_platform_fee_percent', process.env.AD_PLATFORM_FEE_PERCENT || '5'],
+      ['auto_deposit_enabled', process.env.AUTO_DEPOSIT_ENABLED || 'true'],
+    ];
+    for (const [k, v] of taxDefaults) {
+      await client.query(
+        `INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO NOTHING`,
+        [k, v]
+      );
+    }
 
     console.log('[NovaSuite] Migration OK');
   } catch (e) {

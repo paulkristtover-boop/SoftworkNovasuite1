@@ -87,6 +87,25 @@ function startJobs(bot) {
     });
   }
 
+
+  // Auto-deposit poller (verify pending TxIDs on-chain)
+  if (config.autoDepositEnabled) {
+    const mins = Math.max(2, config.depositPollMinutes || 5);
+    cron.schedule(`*/${mins} * * * *`, async () => {
+      try {
+        const { pollPendingDeposits } = require('../services/paymentService');
+        const r = await pollPendingDeposits(15);
+        if (r.approved) logger.info(`Deposit poll: ${r.approved}/${r.scanned} auto-approved`);
+        await pool.query(
+          `INSERT INTO health_checks (service, status, detail) VALUES ('deposit_poll','ok',$1)`,
+          [`scanned=${r.scanned} approved=${r.approved}`]
+        ).catch(() => {});
+      } catch (e) {
+        logger.error('Deposit poll', e.message);
+      }
+    });
+  }
+
   logger.info('Background jobs started');
 }
 

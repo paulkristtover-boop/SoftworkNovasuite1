@@ -3,7 +3,7 @@ const { block, SEP, tip } = require('../../utils/ui');
 const { Markup } = require('telegraf');
 
 module.exports = function ideaHandler(bot) {
-  bot.hears('💡 Ideas', async (ctx) => {
+  bot.hears(['💡 Ideas', '💡 Submit Idea'], async (ctx) => {
     await ctx.replyWithMarkdown(
       block([
         '💡 *Ideas & feedback*',

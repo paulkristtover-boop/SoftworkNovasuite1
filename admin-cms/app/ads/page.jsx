@@ -62,22 +62,51 @@ async function setAdStatus(formData) {
       }
     }
   } else if (status === 'rejected') {
-    await query(
-      `UPDATE ads SET status='rejected', admin_note=$1, updated_at=NOW() WHERE id=$2`,
-      [note || 'Rejected in CMS review', id]
-    );
-    await query(
-      `INSERT INTO audit_logs (actor_type, action, target_type, target_id, details)
-       VALUES ('admin','reject_ad','ad',$1,$2)`,
-      [String(id), JSON.stringify({ note })]
-    );
+    const client = (await import('@/lib/db')).pool;
+    const c = await client.connect();
+    let refunded = 0;
+    try {
+      await c.query('BEGIN');
+      const adRes = await c.query(`SELECT * FROM ads WHERE id=$1 FOR UPDATE`, [id]);
+      const ad = adRes.rows[0];
+      if (!ad) throw new Error('Not found');
+      if (ad.status === 'pending') {
+        refunded = Math.max(0, parseFloat(ad.budget) - parseFloat(ad.spent));
+        if (refunded > 0) {
+          const u = await c.query(`SELECT balance FROM users WHERE telegram_id=$1 FOR UPDATE`, [ad.owner_id]);
+          const newBal = parseFloat(u.rows[0].balance) + refunded;
+          await c.query(`UPDATE users SET balance=$1, updated_at=NOW() WHERE telegram_id=$2`, [newBal, ad.owner_id]);
+          await c.query(
+            `INSERT INTO transactions (user_id, type, amount, balance_after, reference_id, reference_type, note, idempotency_key)
+             VALUES ($1,'ad_refund',$2,$3,$4,'ad','CMS reject refund',$5)
+             ON CONFLICT (idempotency_key) DO NOTHING`,
+            [ad.owner_id, refunded, newBal, id, 'ad_reject_refund_' + id]
+          );
+        }
+      }
+      await c.query(
+        `UPDATE ads SET status='rejected', admin_note=$1, updated_at=NOW() WHERE id=$2`,
+        [note || 'Rejected in CMS review', id]
+      );
+      await c.query(
+        `INSERT INTO audit_logs (actor_type, action, target_type, target_id, details)
+         VALUES ('admin','reject_ad','ad',$1,$2)`,
+        [String(id), JSON.stringify({ note, refunded })]
+      );
+      await c.query('COMMIT');
+    } catch (e) {
+      await c.query('ROLLBACK');
+      throw e;
+    } finally {
+      c.release();
+    }
     {
       const row = await query('SELECT owner_id, title FROM ads WHERE id=$1', [id]);
       const r = row.rows[0];
       if (r) {
         await notifyUser(
           r.owner_id,
-          `❌ *Campaign rejected*\n\n#${id} · ${r.title}\n\nContact support if you need details.`
+          `❌ *Campaign rejected*\n\n#${id} · ${r.title}${refunded ? `\nRefunded: $${Number(refunded).toFixed(4)} USDT` : ''}\n\nContact support if you need details.`
         );
       }
     }

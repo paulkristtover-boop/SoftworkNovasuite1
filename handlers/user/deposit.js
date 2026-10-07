@@ -68,7 +68,7 @@ async function presentQuote(ctx, usd) {
 }
 
 module.exports = function depositHandler(bot) {
-  bot.hears('➕ Deposit', async (ctx) => {
+  bot.hears(['➕ Deposit', '📥 Deposit'], async (ctx) => {
     const addresses = await getPaymentAddresses(true);
     if (!addresses.length) {
       return ctx.replyWithMarkdown(

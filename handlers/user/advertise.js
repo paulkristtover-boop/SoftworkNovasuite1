@@ -39,7 +39,7 @@ function campaignControls(a) {
 }
 
 module.exports = function advertiseHandler(bot) {
-  bot.hears('📣 Promote', async (ctx) => {
+  bot.hears(['📣 Promote', '📢 Advertise'], async (ctx) => {
     const user = await getUser(ctx.from.id);
     if (!user) return ctx.reply(errorMsg('Please tap /start first.'), mainMenu());
 
@@ -198,14 +198,80 @@ module.exports = function advertiseHandler(bot) {
     await ctx.answerCbQuery();
     if (!ctx.session?.ad) return;
     ctx.session.ad.type = ctx.match[1];
-    ctx.session.step = 'ad_reward';
+    ctx.session.step = 'ad_desc';
     await ctx.replyWithMarkdown(
       block([
-        stepProgress(3, 4, `Type: *${ctx.match[1]}*`),
+        stepProgress(3, 6, `Type: *${ctx.match[1]}*`),
         '',
-        `Enter *reward per view* in USDT (min ${config.minAdReward || 0.005})`,
+        'Send a short *description* (or type `skip`)',
       ]),
       cancelInline()
     );
+  });
+
+  bot.action('ad_confirm', async (ctx) => {
+    await ctx.answerCbQuery();
+    const s = ctx.session?.ad;
+    if (!s?.title || !s?.url || !s?.reward || !s?.budget) {
+      return ctx.reply(errorMsg('Session expired. Start Promote again.'), mainMenu());
+    }
+    try {
+      const { createAd } = require('../../services/adService');
+      const ad = await createAd({
+        ownerId: ctx.from.id,
+        title: s.title,
+        description: s.description || null,
+        url: s.url,
+        type: s.type || 'website',
+        reward: s.reward,
+        budget: s.budget,
+      });
+      ctx.session = {};
+      const estViews = Math.floor(parseFloat(ad.budget) / parseFloat(ad.reward));
+      const feePct = config.adPlatformFeePercent || 0;
+      await ctx.replyWithMarkdown(
+        success(
+          'Campaign submitted',
+          block([
+            SEP,
+            `ID: *#${ad.id}*`,
+            `Title: ${ad.title}`,
+            `Reward: ${formatUsd(ad.reward)} / view`,
+            `Budget: ${formatUsd(ad.budget)} · ~${estViews} views`,
+            feePct ? `Platform fee: ${feePct}% (already deducted)` : null,
+            '',
+            '_Status: pending admin approval_',
+            tip('You will be notified when it goes live'),
+          ])
+        ),
+        mainMenu()
+      );
+      for (const aid of config.adminIds) {
+        try {
+          await ctx.telegram.sendMessage(
+            aid,
+            [
+              `🆕 *Campaign review* #${ad.id}`,
+              '',
+              `*Title:* ${ad.title}`,
+              `*Type:* ${ad.type}`,
+              `*URL:* ${ad.url}`,
+              `*Reward:* ${ad.reward} USDT / view`,
+              `*Budget:* ${ad.budget} USDT`,
+              `*Owner:* ${ctx.from.id} (@${ctx.from.username || 'n/a'})`,
+              '',
+              '_Open the URL, then Activate or Reject_',
+            ].join('\n'),
+            {
+              parse_mode: 'Markdown',
+              ...require('../../keyboards/admin').adModeration(ad.id),
+            }
+          );
+        } catch (_) {}
+      }
+    } catch (e) {
+      ctx.session = {};
+      await ctx.reply(errorMsg(e.message), mainMenu());
+    }
   });
 };

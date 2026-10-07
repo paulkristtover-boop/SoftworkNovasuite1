@@ -6,7 +6,7 @@ const { Markup } = require('telegraf');
 const config = require('../../config');
 
 module.exports = function supportHandler(bot) {
-  bot.hears('💬 Support', async (ctx) => {
+  bot.hears(['💬 Support', '🆘 Support'], async (ctx) => {
     const u = (await getSetting('support_username', '')) || config.supportUsername || '';
     const lines = [
       '💬 *Support*',

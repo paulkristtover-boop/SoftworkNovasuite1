@@ -59,7 +59,7 @@ async function updateBalance(telegramId, delta, type, { note, referenceId, refer
 
     await client.query(
       `UPDATE users SET balance=$1, updated_at=NOW(),
-       total_earned = total_earned + CASE WHEN $2 > 0 THEN $2 ELSE 0 END,
+       total_earned = total_earned + CASE WHEN $2 > 0 AND $3 IN ('ad_reward','referral_bonus','welcome_bonus') THEN $2 ELSE 0 END,
        total_withdrawn = total_withdrawn + CASE WHEN $2 < 0 AND $3 = 'withdrawal' THEN ABS($2) ELSE 0 END
        WHERE telegram_id=$4`,
       [newBal, delta, type, telegramId]

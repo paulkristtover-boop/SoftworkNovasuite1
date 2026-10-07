@@ -160,18 +160,4 @@ module.exports = function startHandler(bot) {
     );
   });
 
-  bot.action('go_home', async (ctx) => {
-    await ctx.answerCbQuery();
-    ctx.session = {};
-    if (config.requireMembership && !isAdmin(ctx.from.id)) {
-      const result = await checkCommunityMembership(ctx.telegram, ctx.from.id);
-      if (!result.ok) {
-        return ctx.replyWithMarkdown(
-          block(['🔒 Join channel & group to continue', tip('Verify when done')]),
-          joinKeyboard()
-        );
-      }
-    }
-    await ctx.reply('✅ Main menu', mainMenu());
-  });
 };

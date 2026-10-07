@@ -1,32 +1,77 @@
+/**
+ * Campaign product service — Earn + Advertise
+ *
+ * Money rules:
+ * - Create: debit budget + platform fee from owner
+ * - Reject: refund unused budget (fee kept unless REFUND_FEE_ON_REJECT)
+ * - Delete: refund remaining budget
+ * - View complete: credit viewer, debit spent, referral cut
+ * - Resume: only if budget still covers ≥1 reward
+ */
+
 const { pool } = require('../database');
 const { updateBalance } = require('./userService');
 const { getSetting } = require('./settingsService');
 const { checkDailyLimits, checkCooldown, recordEvent } = require('./fraudService');
 const { randomToken, idempotencyKey } = require('../utils/helpers');
 const config = require('../config');
+const { logger } = require('../utils/logger');
 
-async function createAd({ ownerId, title, description, url, type, reward, budget, maxViews, durationSec }) {
+function feeAmountFor(budget) {
+  const feePct = config.adPlatformFeePercent || 0;
+  return Math.round(parseFloat(budget) * (feePct / 100) * 1e6) / 1e6;
+}
+
+async function treasuryFee(amount, note, key) {
+  try {
+    const { getSetting, setSetting } = require('./settingsService');
+    const tb = parseFloat(await getSetting('treasury_balance', '0')) || 0;
+    const newTb = tb + parseFloat(amount);
+    await setSetting('treasury_balance', String(newTb));
+    await pool.query(
+      `INSERT INTO treasury_logs (type, amount, balance_after, note, tax_kind, idempotency_key)
+       VALUES ('in',$1,$2,$3,'ad_fee',$4) ON CONFLICT (idempotency_key) DO NOTHING`,
+      [amount, newTb, note, key]
+    );
+  } catch (e) {
+    logger.warn('treasury fee', e.message);
+  }
+}
+
+async function createAd({
+  ownerId,
+  title,
+  description,
+  url,
+  type,
+  reward,
+  budget,
+  maxViews,
+  durationSec,
+}) {
   const minR = config.minAdReward || 0.005;
   const maxR = config.maxAdReward || 1;
   if (!(reward >= minR && reward <= maxR)) {
     throw new Error(`Reward must be between ${minR} and ${maxR} USDT`);
   }
   if (!(budget >= reward)) throw new Error('Budget must cover at least one view');
-  const feePct = config.adPlatformFeePercent || 0;
-  const fee = Math.round(budget * feePct) / 100 / 100 * 100; // keep simple
-  const feeAmount = Math.round(budget * (feePct / 100) * 1e6) / 1e6;
-  const totalDebit = budget + feeAmount;
+  const feeAmount = feeAmountFor(budget);
+  const totalDebit = parseFloat(budget) + feeAmount;
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const u = await client.query('SELECT balance FROM users WHERE telegram_id=$1 FOR UPDATE', [ownerId]);
-    if (!u.rows[0] || parseFloat(u.rows[0].balance) < totalDebit) throw new Error(`Insufficient balance (need ${totalDebit} USDT incl. ${feePct}% fee)`);
+    if (!u.rows[0] || parseFloat(u.rows[0].balance) < totalDebit) {
+      throw new Error(`Insufficient balance (need ${totalDebit} USDT incl. ${config.adPlatformFeePercent}% fee)`);
+    }
     const count = await client.query(
       `SELECT COUNT(*) FROM ads WHERE owner_id=$1 AND status IN ('pending','active','paused')`,
       [ownerId]
     );
-    if (parseInt(count.rows[0].count, 10) >= config.maxAdsPerUser) throw new Error('Too many active ads');
+    if (parseInt(count.rows[0].count, 10) >= config.maxAdsPerUser) {
+      throw new Error('Too many active campaigns');
+    }
     const newBal = parseFloat(u.rows[0].balance) - totalDebit;
     await client.query('UPDATE users SET balance=$1, updated_at=NOW() WHERE telegram_id=$2', [newBal, ownerId]);
     const res = await client.query(
@@ -46,24 +91,15 @@ async function createAd({ ownerId, title, description, url, type, reward, budget
     );
     await client.query(
       `INSERT INTO transactions (user_id, type, amount, balance_after, reference_id, reference_type, note, idempotency_key)
-       VALUES ($1,'ad_spend',$2,$3,$4,'ad','Ad budget reserved',$5)`,
+       VALUES ($1,'ad_spend',$2,$3,$4,'ad','Campaign budget + fee',$5)`,
       [ownerId, -totalDebit, newBal, res.rows[0].id, idempotencyKey('ad_spend', res.rows[0].id)]
     );
-    if (feeAmount > 0) {
-      const tb = await client.query(`SELECT value FROM settings WHERE key='treasury_balance'`);
-      const tbal = (parseFloat(tb.rows[0]?.value || '0') || 0) + feeAmount;
-      await client.query(
-        `INSERT INTO settings (key, value, updated_at) VALUES ('treasury_balance',$1,NOW())
-         ON CONFLICT (key) DO UPDATE SET value=$1, updated_at=NOW()`,
-        [String(tbal)]
-      );
-      await client.query(
-        `INSERT INTO treasury_logs (type, amount, balance_after, note)
-         VALUES ('in',$1,$2,$3)`,
-        [feeAmount, tbal, `Ad platform fee #${res.rows[0].id}`]
-      );
-    }
     await client.query('COMMIT');
+
+    if (feeAmount > 0) {
+      await treasuryFee(feeAmount, `Ad platform fee #${res.rows[0].id}`, idempotencyKey('treasury_ad_fee', res.rows[0].id));
+    }
+
     return { ...res.rows[0], platformFee: feeAmount, totalDebit };
   } catch (e) {
     await client.query('ROLLBACK');
@@ -88,7 +124,8 @@ async function getAvailableAdForUser(userId) {
        AND NOT EXISTS (
          SELECT 1 FROM ad_views av WHERE av.ad_id=a.id AND av.user_id=$1 AND av.verified=TRUE
        )
-     ORDER BY RANDOM() LIMIT 1`,
+     ORDER BY a.reward DESC, RANDOM()
+     LIMIT 1`,
     [userId]
   );
   return { ad: res.rows[0] || null };
@@ -107,7 +144,7 @@ async function getAd(adId) {
   return res.rows[0] || null;
 }
 
-async function startAdView(adId, userId) {
+async function startAdView(adId, userId, ipHash = null) {
   const limits = await checkDailyLimits(userId);
   if (!limits.ok) throw new Error(limits.reason);
   const cool = await checkCooldown(userId);
@@ -122,15 +159,26 @@ async function startAdView(adId, userId) {
 
   const token = randomToken(16);
   await pool.query(
-    `INSERT INTO ad_views (ad_id, user_id, reward, client_token, status, started_at)
-     VALUES ($1,$2,$3,$4,'started',NOW())
+    `INSERT INTO ad_views (ad_id, user_id, reward, client_token, status, started_at, ip_hash, link_opened_at, verified, completed_at)
+     VALUES ($1,$2,$3,$4,'started',NOW(),$5,NULL,FALSE,NULL)
      ON CONFLICT (ad_id, user_id) DO UPDATE
-       SET client_token=$4, started_at=NOW(), status='started', verified=FALSE, completed_at=NULL
+       SET client_token=$4, started_at=NOW(), status='started', verified=FALSE,
+           completed_at=NULL, link_opened_at=NULL, ip_hash=COALESCE($5, ad_views.ip_hash)
        WHERE ad_views.verified=FALSE`,
-    [adId, userId, row.reward, token]
+    [adId, userId, row.reward, token, ipHash]
   );
   const durationSec = parseInt(row.duration_sec, 10) || config.adViewDurationSec;
   return { token, durationSec, ad: row };
+}
+
+async function markLinkOpened(adId, userId, clientToken) {
+  const res = await pool.query(
+    `UPDATE ad_views SET link_opened_at=COALESCE(link_opened_at, NOW())
+     WHERE ad_id=$1 AND user_id=$2 AND client_token=$3 AND verified=FALSE
+     RETURNING *`,
+    [adId, userId, clientToken]
+  );
+  return res.rows[0] || null;
 }
 
 async function completeAdView(adId, userId, clientToken) {
@@ -148,6 +196,11 @@ async function completeAdView(adId, userId, clientToken) {
     if (v.client_token !== clientToken) {
       await recordEvent(userId, 'invalid_view_token', 3, { adId });
       throw new Error('Invalid session — start the view again');
+    }
+
+    if (config.requireLinkOpen && !v.link_opened_at) {
+      await recordEvent(userId, 'complete_without_open', 2, { adId });
+      throw new Error('Open the ad link first, wait the full time, then confirm');
     }
 
     const adRes = await client.query(`SELECT * FROM ads WHERE id=$1 FOR UPDATE`, [adId]);
@@ -215,14 +268,62 @@ async function completeAdView(adId, userId, clientToken) {
   return { reward: rewardAmount };
 }
 
-async function setAdStatus(adId, status, adminNote) {
+async function setAdStatus(adId, status, adminNote, rejectReason) {
+  const ad = await getAd(adId);
+  if (!ad) throw new Error('Campaign not found');
+
+  if (status === 'rejected' && ad.status === 'pending' && config.refundOnReject) {
+    return rejectAndRefund(adId, adminNote, rejectReason);
+  }
+
   await pool.query(
-    `UPDATE ads SET status=$1, admin_note=COALESCE($2, admin_note), updated_at=NOW() WHERE id=$3`,
-    [status, adminNote || null, adId]
+    `UPDATE ads SET status=$1, admin_note=COALESCE($2, admin_note),
+      reject_reason=COALESCE($3, reject_reason), updated_at=NOW() WHERE id=$4`,
+    [status, adminNote || null, rejectReason || null, adId]
   );
   return getAd(adId);
 }
 
+async function rejectAndRefund(adId, adminNote, rejectReason) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const adRes = await client.query(`SELECT * FROM ads WHERE id=$1 FOR UPDATE`, [adId]);
+    if (!adRes.rows[0]) throw new Error('Campaign not found');
+    const ad = adRes.rows[0];
+    if (ad.status !== 'pending') throw new Error('Only pending campaigns can be rejected with refund');
+
+    const remaining = Math.max(0, parseFloat(ad.budget) - parseFloat(ad.spent));
+    let refund = remaining;
+    if (config.refundFeeOnReject) {
+      refund += feeAmountFor(ad.budget);
+    }
+
+    await client.query(
+      `UPDATE ads SET status='rejected', admin_note=$1, reject_reason=$2, updated_at=NOW() WHERE id=$3`,
+      [adminNote || 'Rejected', rejectReason || adminNote || null, adId]
+    );
+
+    if (refund > 0) {
+      const u = await client.query(`SELECT balance FROM users WHERE telegram_id=$1 FOR UPDATE`, [ad.owner_id]);
+      const newBal = parseFloat(u.rows[0].balance) + refund;
+      await client.query(`UPDATE users SET balance=$1, updated_at=NOW() WHERE telegram_id=$2`, [newBal, ad.owner_id]);
+      await client.query(
+        `INSERT INTO transactions (user_id, type, amount, balance_after, reference_id, reference_type, note, idempotency_key)
+         VALUES ($1,'ad_refund',$2,$3,$4,'ad','Reject refund',$5)
+         ON CONFLICT (idempotency_key) DO NOTHING`,
+        [ad.owner_id, refund, newBal, adId, idempotencyKey('ad_reject_refund', adId)]
+      );
+    }
+    await client.query('COMMIT');
+    return { ...(await getAd(adId)), refunded: refund };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
 
 async function assertOwner(adId, ownerId) {
   const ad = await getAd(adId);
@@ -234,8 +335,7 @@ async function assertOwner(adId, ownerId) {
 async function topUpBudget(adId, ownerId, amount) {
   const amt = parseFloat(amount);
   if (!Number.isFinite(amt) || amt <= 0) throw new Error('Invalid top-up amount');
-  const feePct = config.adPlatformFeePercent || 0;
-  const feeAmount = Math.round(amt * (feePct / 100) * 1e6) / 1e6;
+  const feeAmount = feeAmountFor(amt);
   const totalDebit = amt + feeAmount;
 
   const client = await pool.connect();
@@ -255,8 +355,6 @@ async function topUpBudget(adId, ownerId, amount) {
     await client.query(`UPDATE users SET balance=$1, updated_at=NOW() WHERE telegram_id=$2`, [newBal, ownerId]);
     const newBudget = parseFloat(ad.budget) + amt;
     let status = ad.status;
-    if (status === 'finished' || status === 'paused') status = status === 'finished' ? 'pending' : status;
-    // if finished from budget, reopen as active if was active-like
     if (ad.status === 'finished') status = 'pending';
 
     await client.query(
@@ -268,16 +366,12 @@ async function topUpBudget(adId, ownerId, amount) {
        VALUES ($1,'ad_topup',$2,$3,$4,'ad','Campaign top-up',$5)`,
       [ownerId, -totalDebit, newBal, adId, idempotencyKey('ad_topup', adId, Date.now())]
     );
-    if (feeAmount > 0) {
-      const tb = await client.query(`SELECT value FROM settings WHERE key='treasury_balance'`);
-      const tbal = (parseFloat(tb.rows[0]?.value || '0') || 0) + feeAmount;
-      await client.query(
-        `INSERT INTO settings (key, value, updated_at) VALUES ('treasury_balance',$1,NOW())
-         ON CONFLICT (key) DO UPDATE SET value=$1, updated_at=NOW()`,
-        [String(tbal)]
-      );
-    }
     await client.query('COMMIT');
+
+    if (feeAmount > 0) {
+      await treasuryFee(feeAmount, `Ad top-up fee #${adId}`, idempotencyKey('treasury_ad_topup_fee', adId, Date.now()));
+    }
+
     return { ...(await getAd(adId)), topUp: amt, feeAmount, totalDebit };
   } catch (e) {
     await client.query('ROLLBACK');
@@ -297,6 +391,13 @@ async function pauseAd(adId, ownerId) {
 async function resumeAd(adId, ownerId) {
   const ad = await assertOwner(adId, ownerId);
   if (ad.status !== 'paused') throw new Error('Only paused campaigns can be resumed');
+  const left = parseFloat(ad.budget) - parseFloat(ad.spent);
+  if (left < parseFloat(ad.reward)) {
+    throw new Error('Budget too low to resume — top up first');
+  }
+  if (ad.max_views && ad.views_done >= ad.max_views) {
+    throw new Error('Max views reached — top up or create a new campaign');
+  }
   await pool.query(`UPDATE ads SET status='active', updated_at=NOW() WHERE id=$1`, [adId]);
   return getAd(adId);
 }
@@ -312,15 +413,23 @@ async function deleteAd(adId, ownerId) {
     if (ad.status === 'deleted') throw new Error('Already deleted');
 
     const remaining = Math.max(0, parseFloat(ad.budget) - parseFloat(ad.spent));
-    if (remaining > 0 && ['pending', 'paused', 'active', 'finished'].includes(ad.status)) {
-      const u = await client.query(`SELECT balance FROM users WHERE telegram_id=$1 FOR UPDATE`, [ownerId]);
-      const newBal = parseFloat(u.rows[0].balance) + remaining;
-      await client.query(`UPDATE users SET balance=$1, updated_at=NOW() WHERE telegram_id=$2`, [newBal, ownerId]);
-      await client.query(
-        `INSERT INTO transactions (user_id, type, amount, balance_after, reference_id, reference_type, note, idempotency_key)
-         VALUES ($1,'ad_refund',$2,$3,$4,'ad','Unused budget refund on delete',$5)`,
-        [ownerId, remaining, newBal, adId, idempotencyKey('ad_refund', adId)]
+    if (remaining > 0 && ['pending', 'paused', 'active', 'finished', 'rejected'].includes(ad.status)) {
+      const prior = await client.query(
+        `SELECT id FROM transactions WHERE reference_id=$1 AND reference_type='ad' AND type='ad_refund' LIMIT 1`,
+        [adId]
       );
+      if (!prior.rows[0]) {
+        const u = await client.query(`SELECT balance FROM users WHERE telegram_id=$1 FOR UPDATE`, [ownerId]);
+        const newBal = parseFloat(u.rows[0].balance) + remaining;
+        await client.query(`UPDATE users SET balance=$1, updated_at=NOW() WHERE telegram_id=$2`, [newBal, ownerId]);
+        await client.query(
+          `INSERT INTO transactions (user_id, type, amount, balance_after, reference_id, reference_type, note, idempotency_key)
+           VALUES ($1,'ad_refund',$2,$3,$4,'ad','Unused budget refund on delete',$5)`,
+          [ownerId, remaining, newBal, adId, idempotencyKey('ad_refund', adId)]
+        );
+      } else {
+        // already refunded on reject
+      }
     }
     await client.query(`UPDATE ads SET status='deleted', updated_at=NOW() WHERE id=$1`, [adId]);
     await client.query('COMMIT');
@@ -339,7 +448,6 @@ async function updateAd(adId, ownerId, fields) {
   const title = fields.title != null ? String(fields.title).slice(0, 200) : ad.title;
   const url = fields.url != null ? String(fields.url) : ad.url;
   const description = fields.description !== undefined ? fields.description : ad.description;
-  // editing live ad may need re-approval for url/title change
   let status = ad.status;
   if (ad.status === 'active' && (fields.url || fields.title)) {
     status = 'pending';
@@ -355,8 +463,10 @@ module.exports = {
   createAd,
   getAvailableAdForUser,
   startAdView,
+  markLinkOpened,
   completeAdView,
   setAdStatus,
+  rejectAndRefund,
   listMyAds,
   getAd,
   topUpBudget,

@@ -6,7 +6,7 @@ const { Markup } = require('telegraf');
 const { card, tip, errorMsg, block, SEP } = require('../../utils/ui');
 
 module.exports = function balanceHandler(bot) {
-  bot.hears('💼 Wallet', async (ctx) => {
+  bot.hears(['💼 Wallet', '💰 Balance'], async (ctx) => {
     const user = await getUser(ctx.from.id);
     if (!user) return ctx.reply(errorMsg('Please tap /start first.'), mainMenu());
 

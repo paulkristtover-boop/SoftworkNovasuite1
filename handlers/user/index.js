@@ -28,8 +28,15 @@ function registerUserHandlers(bot) {
   bot.action('cancel', async (ctx) => {
     await ctx.answerCbQuery('Cancelled');
     ctx.session = {};
-    await ctx.reply('Cancelled. You are back at the main menu.', mainMenu());
+    await ctx.reply('✅ Cancelled — main menu', mainMenu());
+  });
+
+  bot.action('go_home', async (ctx) => {
+    await ctx.answerCbQuery();
+    ctx.session = {};
+    await ctx.reply('✅ Main menu', mainMenu());
   });
 }
+
 
 module.exports = { registerUserHandlers };
